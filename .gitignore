@@ -1,0 +1,10 @@
+SmartRoadVisionSystem/output/
+__pycache__/
+*.pyc
+traffic management/
+SmartRoadVisionSystem (Baseline Version)/
+Every Iteration of 'main.py' File/
+uvtp/
+fast-reid/
+main_front.py
+main_rear.py
