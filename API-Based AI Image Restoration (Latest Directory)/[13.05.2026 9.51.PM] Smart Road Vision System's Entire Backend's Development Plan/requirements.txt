@@ -1,0 +1,23 @@
+# Async & Network
+aiofiles==23.2.1
+httpx==0.27.0
+
+# Computer Vision & Deep Learning
+torch>=2.0.0
+torchvision>=0.15.0
+ultralytics>=8.0.0
+opencv-python-headless==4.9.0.80
+Pillow>=10.0.0
+
+# TransReID Requirements
+timm==0.9.12
+yacs==0.1.8
+scipy>=1.10.0
+
+# OCR Engine
+paddleocr>=2.7.0.3
+paddlepaddle-gpu>=2.5.2 # Change to 'paddlepaddle' if Jules VM lacks a GPU
+
+# Data Handling
+numpy>=1.24.0
+pandas>=2.0.0
