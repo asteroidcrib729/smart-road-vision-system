@@ -226,20 +226,31 @@ class VideoPipelineAsync:
             # TransReID + DeepOCSORT (Simulated)
             active_tracks, removed_tracks = tracker.update(filtered_dets, features)
 
+            # Step 1: Accumulate temporal evidence for active tracks
             for track in active_tracks:
+                if not track['active']: continue
                 track_id = track['track_id']
                 bbox = track['bbox']
                 cls_name = track['class']
-                crop = frame[max(0, bbox[1]):bbox[3], max(0, bbox[0]):bbox[2]]
+
+                # Secure upper bounds during crop slicing (Addresses Flaw 9)
+                crop = frame[max(0, int(bbox[1])):min(frame.shape[0], int(bbox[3])),
+                             max(0, int(bbox[0])):min(frame.shape[1], int(bbox[2]))]
+                if crop.size == 0: continue
 
                 processor.process_best_snapshot(track_id, crop, bbox)
                 processor.track_states[track_id]['class_name'] = cls_name
 
-                # Assume a track is finalized immediately for dummy test
-                # UVTP Evaluation: Pass state through the Un-Identifiable Vehicle Tracking & Profiling logic
-                state = processor.track_states.get(track_id)
-                # Pass violation check down to finalizing
-                await processor.finalize_track(track_id)
+                # Utilize ANPR voting buffer while the vehicle is actively tracked
+                if hasattr(processor, 'ocr_engine') and processor.ocr_engine:
+                    plate_text, p_conf = processor.ocr_engine.process(track_id, crop)
+                    if plate_text:
+                        processor.track_states[track_id]['plate_text'] = plate_text
+                        processor.track_states[track_id]['plate_conf'] = p_conf
+
+            # Step 2: Only finalize lifecycle events when targets exit the frame boundaries
+            for dead_track in removed_tracks:
+                await processor.finalize_track(dead_track.track_id)
 
             await asyncio.sleep(0.01) # Simulate processing time and yield loop
 
