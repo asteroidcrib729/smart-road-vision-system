@@ -39,7 +39,7 @@ class EvidenceBuffer:
         current_best = self.buffers[track_id]
 
         # Heuristic: Larger bounding box implies closer to camera -> better resolution
-        if area > current_best['best_area'] and conf >= current_best['best_conf']:
+        if area > current_best['best_area'] * 1.1 or (area > current_best['best_area'] and conf >= current_best['best_conf']):
             self.buffers[track_id] = {'best_area': area, 'best_conf': conf, 'best_crop': crop.copy()}
 
     def get_best_crop(self, track_id):

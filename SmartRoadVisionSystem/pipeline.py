@@ -4,6 +4,11 @@ import asyncio
 import os
 
 from config import Config
+from models.transreid import TransReIDExtractor
+from core.tracker import DeepOCSORT
+from core.uvtp import UVTPGate, EvidenceBuffer, OutputDispatcher
+from subtasks.anpr import ANPRProcessor
+from subtasks.helmet import HelmetDetector
 from utils.db_handler import DatabaseHandler
 from utils.math_utils import calculate_laplacian_variance, calculate_bbox_area, SpeedEstimator
 from subtasks.api_fallbacks.extract_helmets import HelmetExtractorAPI
@@ -13,40 +18,12 @@ from subtasks.api_fallbacks.enhanced_image_generation import RealESRGANAPI
 # Dummy placeholders for TransReID and DeepOCSORT tracking logic.
 # In a real environment, you'd import `from models.transreid import TransReIDExtractor` and `from core.tracker import DeepOCSORT`
 
-class TransReIDModule:
-    """
-    Spatial-Temporal Vehicle Re-Identification Module using TransReID.
-    Extracts deep vision transformer features for object matching.
-    """
-    def extract(self, crop):
-        return np.random.rand(256) # Actual torch logic mapped when weight is present
 
 
-class UVTPModule:
-    """
-    Un-Identifiable Vehicle Tracking & Profiling (UVTP) Gate.
-    Verifies if a tracked vehicle violates the conditions based on tracking and spatial state.
-    """
-    def evaluate(self, state):
-        if state.get('violation'):
-            return True
-        return False
 
-class DeepOCSORTModule:
-    """
-    DeepOCSORT Multi-Object Tracker.
-    Fuses bounding box spatial information with TransReID appearance features.
-    """
-    def __init__(self):
-        self.tracks = {}
-        self.next_id = 1
-    def update(self, detections, features):
-        active = []
-        for d in detections:
-            track_id = f"ID_{self.next_id}"
-            self.next_id += 1
-            active.append({'track_id': track_id, 'bbox': d['bbox'], 'class': d['class']})
-        return active, []
+
+
+
 
 
 class BaseStreamProcessor:
@@ -77,7 +54,11 @@ class BaseStreamProcessor:
                 'max_area': 0,
                 'max_laplacian': 0,
                 'class_name': None,
-                'speed': 0.0
+                'speed': 0.0,
+                'plate_text': None,
+                'plate_conf': 0.0,
+                'has_helmet': True,
+                'violation': False
             }
 
         area = calculate_bbox_area(bbox)
@@ -128,6 +109,9 @@ class StreamA_Processor(BaseStreamProcessor):
         else:
             violation = False # Add speeding logic if desired: state['speed'] > Config.SPEED_LIMIT_KMH
 
+        state['plate_text'] = plate_text
+        state['violation'] = violation
+
         # Save Snapshot
         save_path = os.path.join(Config.OUTPUT_LARGE_VEHICLES, f"{track_id}.jpg")
         cv2.imwrite(save_path, crop)
@@ -174,6 +158,9 @@ class StreamB_Processor(BaseStreamProcessor):
             helmet_detected = await self.helmet_api.extract_helmet(crop)
             if not helmet_detected:
                 violation = True
+            state['plate_text'] = plate_text
+            state['has_helmet'] = helmet_detected if helmet_detected is not None else False
+            state['violation'] = violation
 
             # Save Snapshot
             save_path = os.path.join(Config.OUTPUT_MOTORCYCLES, f"{track_id}.jpg")
@@ -187,6 +174,8 @@ class StreamB_Processor(BaseStreamProcessor):
             print(f"[Stream B] Processed {track_id} (Motorcycle): Plate={plate_text}, Helmet={helmet_detected}, Violation={violation}")
 
         elif class_name == "Auto-rickshaw":
+            state['plate_text'] = plate_text
+            state['violation'] = violation
             save_path = os.path.join(Config.OUTPUT_AUTORICKSHAWS, f"{track_id}.jpg")
             cv2.imwrite(save_path, crop)
             await self.db.log_auto_rickshaw(track_id, plate_text, violation)
@@ -200,12 +189,12 @@ class VideoPipelineAsync:
         self.stream_a = StreamA_Processor()
         self.stream_b = StreamB_Processor()
 
-        self.reid = TransReIDModule()
-        self.tracker_a = DeepOCSORTModule()
-        self.tracker_b = DeepOCSORTModule()
+        self.reid = TransReIDExtractor(Config.TRANSREID_MODEL_PATH)
+        self.tracker_a = DeepOCSORT(max_age=Config.TRACK_MAX_AGE, min_hits=Config.TRACK_MIN_HITS, iou_threshold=Config.IOU_THRESHOLD)
+        self.tracker_b = DeepOCSORT(max_age=Config.TRACK_MAX_AGE, min_hits=Config.TRACK_MIN_HITS, iou_threshold=Config.IOU_THRESHOLD)
 
         # Initialize UVTP Gate to finalize spatial-temporal state violations
-        self.uvtp_gate = UVTPModule()
+        self.uvtp_gate = UVTPGate(anpr_conf_thresh=Config.ANPR_CONF_THRESH)
 
     def dummy_detect(self, frame_count, stream_type):
         # Simulate detections for test
