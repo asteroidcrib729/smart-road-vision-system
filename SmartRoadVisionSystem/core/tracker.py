@@ -57,6 +57,7 @@ class DeepOCSORT:
         # 1. Predict (increment age of tracks)
         for track in self.tracks:
             track.time_since_update += 1
+            track.is_active = False  # Reset state until matched on current frame
 
         # 2. Match
         matched, unmatched_dets, unmatched_tracks = self._match(detections, features)

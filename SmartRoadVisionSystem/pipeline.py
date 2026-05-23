@@ -38,6 +38,10 @@ class BaseStreamProcessor:
         # Local OCR Engine Placeholder from trafficmanagement directory
         self.ocr_engine = None # self.ocr_engine = OCREngine()
 
+        self.uvtp_gate = UVTPGate()
+        self.evidence_buffer = EvidenceBuffer()
+        self.output_dispatcher = OutputDispatcher(Config.OUTPUT_DIR)
+
         # Track State Buffer: store best crop heuristics and info: store best crop heuristics and info
         self.track_states = {}
 
@@ -51,8 +55,6 @@ class BaseStreamProcessor:
         if track_id not in self.track_states:
             self.track_states[track_id] = {
                 'best_crop': None,
-                'max_area': 0,
-                'max_laplacian': 0,
                 'class_name': None,
                 'speed': 0.0,
                 'plate_text': None,
@@ -60,17 +62,10 @@ class BaseStreamProcessor:
                 'has_helmet': True,
                 'violation': False
             }
-
-        area = calculate_bbox_area(bbox)
-        lap_var = calculate_laplacian_variance(crop)
-
+        # Utilize central Evidence Buffer for state heuristic resolution
+        self.evidence_buffer.update(track_id, crop, bbox, conf=1.0) # conf proxy
         state = self.track_states[track_id]
-
-        # Heuristic Logic: prioritize Area first, then sharpness if Area is similar
-        if state['best_crop'] is None or (area > state['max_area'] * 0.9 and lap_var > state['max_laplacian']):
-            state['best_crop'] = crop.copy()
-            state['max_area'] = area
-            state['max_laplacian'] = lap_var
+        state['best_crop'] = self.evidence_buffer.get_best_crop(track_id)
 
     async def finalize_track(self, track_id):
         # Must be implemented by subclasses
@@ -112,12 +107,16 @@ class StreamA_Processor(BaseStreamProcessor):
         state['plate_text'] = plate_text
         state['violation'] = violation
 
-        # Save Snapshot
-        save_path = os.path.join(Config.OUTPUT_LARGE_VEHICLES, f"{track_id}.jpg")
-        cv2.imwrite(save_path, crop)
+        # Dispatch output payload
+        is_uvtp = self.uvtp_gate.evaluate(state)
+        self.output_dispatcher.dispatch(track_id, state, crop, is_uvtp)
 
         # Save to DB
         await self.db.log_large_vehicle(track_id, plate_text, violation)
+
+        # Free memory locks explicitly
+        self.evidence_buffer.clear(track_id)
+        if hasattr(self, 'anpr_processor'): self.anpr_processor.clear_buffer(track_id)
         del self.track_states[track_id]
         print(f"[Stream A] Processed {track_id}: Plate={plate_text}, Violation={violation}")
 
@@ -162,9 +161,8 @@ class StreamB_Processor(BaseStreamProcessor):
             state['has_helmet'] = helmet_detected if helmet_detected is not None else False
             state['violation'] = violation
 
-            # Save Snapshot
-            save_path = os.path.join(Config.OUTPUT_MOTORCYCLES, f"{track_id}.jpg")
-            cv2.imwrite(save_path, crop)
+            is_uvtp = self.uvtp_gate.evaluate(state)
+            self.output_dispatcher.dispatch(track_id, state, crop, is_uvtp)
 
             # Dispatch to Real-ESRGAN API
             restored_path = os.path.join(Config.OUTPUT_RESTORED, f"Restored_{track_id}.jpg")
@@ -176,11 +174,16 @@ class StreamB_Processor(BaseStreamProcessor):
         elif class_name == "Auto-rickshaw":
             state['plate_text'] = plate_text
             state['violation'] = violation
-            save_path = os.path.join(Config.OUTPUT_AUTORICKSHAWS, f"{track_id}.jpg")
-            cv2.imwrite(save_path, crop)
+
+            is_uvtp = self.uvtp_gate.evaluate(state)
+            self.output_dispatcher.dispatch(track_id, state, crop, is_uvtp)
+
             await self.db.log_auto_rickshaw(track_id, plate_text, violation)
             print(f"[Stream B] Processed {track_id} (Auto-Rickshaw): Plate={plate_text}, Violation={violation}")
 
+        # Free memory locks explicitly
+        self.evidence_buffer.clear(track_id)
+        if hasattr(self, 'anpr_processor'): self.anpr_processor.clear_buffer(track_id)
         del self.track_states[track_id]
 
 
@@ -220,7 +223,7 @@ class VideoPipelineAsync:
             features = []
             for det in filtered_dets:
                 bbox = det['bbox']
-                crop = frame[max(0, int(bbox[1])):max(0, int(bbox[3])), max(0, int(bbox[0])):max(0, int(bbox[2]))]
+                crop = frame[max(0, int(bbox[1])):min(frame.shape[0], int(bbox[3])), max(0, int(bbox[0])):min(frame.shape[1], int(bbox[2]))]
                 feat = self.reid.extract(crop)
                 features.append(feat)
 
@@ -253,8 +256,10 @@ class VideoPipelineAsync:
 
         # Flush remaining tracks at end of stream to prevent memory leak
         for track in self.tracker_a.tracks:
-            await self.stream_a.finalize_track(str(track.track_id))
+            if str(track.track_id) in self.stream_a.track_states:
+                await self.stream_a.finalize_track(str(track.track_id))
         for track in self.tracker_b.tracks:
-            await self.stream_b.finalize_track(str(track.track_id))
+            if str(track.track_id) in self.stream_b.track_states:
+                await self.stream_b.finalize_track(str(track.track_id))
 
         print("Pipeline Execution Completed.")
