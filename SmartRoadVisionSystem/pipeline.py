@@ -220,7 +220,7 @@ class VideoPipelineAsync:
             features = []
             for det in filtered_dets:
                 bbox = det['bbox']
-                crop = frame[bbox[1]:bbox[3], bbox[0]:bbox[2]]
+                crop = frame[max(0, int(bbox[1])):max(0, int(bbox[3])), max(0, int(bbox[0])):max(0, int(bbox[2]))]
                 feat = self.reid.extract(crop)
                 features.append(feat)
 
@@ -250,4 +250,11 @@ class VideoPipelineAsync:
             self.process_stream('A', max_frames=30),
             self.process_stream('B', max_frames=30)
         )
+
+        # Flush remaining tracks at end of stream to prevent memory leak
+        for track in self.tracker_a.tracks:
+            await self.stream_a.finalize_track(str(track.track_id))
+        for track in self.tracker_b.tracks:
+            await self.stream_b.finalize_track(str(track.track_id))
+
         print("Pipeline Execution Completed.")

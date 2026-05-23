@@ -87,13 +87,13 @@ class DeepOCSORT:
         output = []
         for track in self.tracks:
             # Return tracks that meet the minimum hit requirement
-            # if track.hits >= self.min_hits or track.time_since_update == 0:
-            output.append({
-                'track_id': track.track_id,
-                'bbox': track.bbox,
-                'class': track.cls_id,
-                'active': track.is_active
-            })
+            if track.hits >= self.min_hits or track.time_since_update == 0:
+                output.append({
+                    'track_id': track.track_id,
+                    'bbox': track.bbox,
+                    'class': track.cls_id,
+                    'active': track.is_active
+                })
 
         return output, removed_tracks
 
@@ -112,14 +112,17 @@ class DeepOCSORT:
             for d, det in enumerate(detections):
                 iou_matrix[t, d] = iou(track.bbox, det['bbox'])
 
-        # Greedy match
+        # Greedy match sorting workaround
         for t in range(len(self.tracks)):
             if len(unmatched_dets) == 0: break
-            best_det = np.argmax(iou_matrix[t])
-            if iou_matrix[t, best_det] >= self.iou_threshold:
+            best_dets = np.argsort(iou_matrix[t])[::-1]
+            for best_det in best_dets:
+                if iou_matrix[t, best_det] < self.iou_threshold:
+                    break
                 if best_det in unmatched_dets:
                     matched.append((t, best_det))
                     unmatched_dets.remove(best_det)
                     unmatched_tracks.remove(t)
+                    break
 
         return matched, unmatched_dets, unmatched_tracks
