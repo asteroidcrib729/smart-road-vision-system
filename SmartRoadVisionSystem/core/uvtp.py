@@ -68,7 +68,7 @@ class OutputDispatcher:
         payload = {
             "track_id": track_id,
             "timestamp": time.time(),
-            "vehicle_class": track_state.get('class_id'),
+            "vehicle_class": track_state.get('class_name'),
             "is_uvtp_alert": is_uvtp,
             "plate_text": track_state.get('plate_text'),
             "plate_conf": track_state.get('plate_conf'),

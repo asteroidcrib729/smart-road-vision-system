@@ -35,10 +35,10 @@ class BaseStreamProcessor:
 
         self.plate_api = NumberplateExtractorAPI()
 
-        # Local OCR Engine Placeholder from trafficmanagement directory
-        self.ocr_engine = None # self.ocr_engine = OCREngine()
+        # Instantiate your local high-performance processing modules
+        self.ocr_engine = ANPRProcessor(buffer_size=Config.N_FRAME_BUFFER)
 
-        self.uvtp_gate = UVTPGate()
+        self.uvtp_gate = UVTPGate(anpr_conf_thresh=Config.ANPR_CONF_THRESH)
         self.evidence_buffer = EvidenceBuffer()
         self.output_dispatcher = OutputDispatcher(Config.OUTPUT_DIR)
 
@@ -83,17 +83,15 @@ class StreamA_Processor(BaseStreamProcessor):
         crop = state['best_crop']
 
         # Tier 1 & 2: Plate Extraction (using API Fallback directly here for simulation)
-        # Tier 1: Local Detection (PaddleOCR)
-        # Assuming the PaddleOCR engine is successfully imported and initialized
-        plate_text = None
-        if hasattr(self, 'ocr_engine') and self.ocr_engine:
-            plate_text, conf = self.ocr_engine.read(crop)
-            if not plate_text or conf < 0.5:
-                plate_text = None
+        # Tier 1: Local Detection (N-Frame Voting Buffer via ANPRProcessor)
+        plate_text = state.get('plate_text')
 
         if not plate_text:
             # Tier 2: API Fallback
             plate_text = await self.plate_api.extract_plate(crop)
+            if plate_text:
+                state['plate_text'] = plate_text
+                state['plate_conf'] = 0.99  # API Override confidence
 
 
 
@@ -135,17 +133,15 @@ class StreamB_Processor(BaseStreamProcessor):
         crop = state['best_crop']
         class_name = state['class_name']
 
-        # Tier 1: Local Detection (PaddleOCR)
-        # Assuming the PaddleOCR engine is successfully imported and initialized
-        plate_text = None
-        if hasattr(self, 'ocr_engine') and self.ocr_engine:
-            plate_text, conf = self.ocr_engine.read(crop)
-            if not plate_text or conf < 0.5:
-                plate_text = None
+        # Tier 1: Local Detection (N-Frame Voting Buffer via ANPRProcessor)
+        plate_text = state.get('plate_text')
 
         if not plate_text:
             # Tier 2: API Fallback
             plate_text = await self.plate_api.extract_plate(crop)
+            if plate_text:
+                state['plate_text'] = plate_text
+                state['plate_conf'] = 0.99  # API Override confidence
 
 
         if not plate_text:
@@ -256,10 +252,10 @@ class VideoPipelineAsync:
 
         # Flush remaining tracks at end of stream to prevent memory leak
         for track in self.tracker_a.tracks:
-            if str(track.track_id) in self.stream_a.track_states:
-                await self.stream_a.finalize_track(str(track.track_id))
+            if track.track_id in self.stream_a.track_states:
+                await self.stream_a.finalize_track(track.track_id)
         for track in self.tracker_b.tracks:
-            if str(track.track_id) in self.stream_b.track_states:
-                await self.stream_b.finalize_track(str(track.track_id))
+            if track.track_id in self.stream_b.track_states:
+                await self.stream_b.finalize_track(track.track_id)
 
         print("Pipeline Execution Completed.")
