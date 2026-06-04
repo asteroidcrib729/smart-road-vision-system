@@ -1,22 +1,8 @@
 "use client";
 
 import React, { useRef, useState, useEffect, ChangeEvent } from 'react';
-
-// ============================================================================
-// STRUCTURAL TYPE DEFINITIONS & CONTRACTS
-// ============================================================================
-
-export interface TrackData {
-  track_id: number;
-  bbox: [number, number, number, number]; // [x1, y1, x2, y2]
-  class_name: string;
-  speed: number;
-  violation: boolean;
-}
-
-export interface TelemetryMap {
-  [frameIndex: number]: TrackData[];
-}
+import { Play, Pause } from 'lucide-react';
+import { TelemetryMap, ToggleState, PlaybackState } from './types';
 
 export interface VideoAnalyticsStationProps {
   telemetryData?: TelemetryMap;
@@ -27,28 +13,10 @@ export interface VideoAnalyticsStationProps {
   fps?: number;          // Processing cadence loop configuration: 60
 }
 
-interface ToggleState {
-  showBBoxes: boolean;
-  showVelocities: boolean;
-  filterMotorcycles: boolean;
-  filterLargeVehicles: boolean;
-}
-
-interface PlaybackState {
-  isPlaying: boolean;
-  currentTime: number;
-  totalDuration: number;
-  computedFrame: number;
-}
-
-// ============================================================================
-// CORE COMPONENT IMPLEMENTATION
-// ============================================================================
-
 export default function VideoAnalyticsStation({
   telemetryData = {},
   videoUrl,
-  streamLabel = "STREAM ANALYSIS HUB",
+  streamLabel = "ZONE 1: STREAM PANEL CONTAINER",
   nativeWidth = 2560,
   nativeHeight = 1440,
   fps = 60
@@ -124,21 +92,21 @@ export default function VideoAnalyticsStation({
       metricsRef.current.w = (x2 - x1) * scaleRef.current.x;
       metricsRef.current.h = (y2 - y1) * scaleRef.current.y;
 
-      const drawColor = track.violation ? '#ef4444' : '#22c55e'; // Crimson warning flag vs dynamic system green
+      const drawColor = track.violation ? '#ef4444' : '#10b981'; // Crimson warning flag (#ef4444) vs emerald green (#10b981)
 
       // Paint active bounding box envelopes
       if (toggles.showBBoxes) {
         ctx.strokeStyle = drawColor;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2.5;
         ctx.strokeRect(metricsRef.current.x, metricsRef.current.y, metricsRef.current.w, metricsRef.current.h);
 
         // String calculation configurations
         const labelString = `ID: ${track.track_id} | ${track.class_name}`;
-        ctx.font = '11px monospace';
+        ctx.font = '10px monospace';
         const stringWidth = ctx.measureText(labelString).width;
 
         ctx.fillStyle = drawColor;
-        ctx.fillRect(metricsRef.current.x, metricsRef.current.y - 18, stringWidth + 12, 18);
+        ctx.fillRect(metricsRef.current.x, metricsRef.current.y - 18, Math.max(160, stringWidth + 12), 18);
 
         ctx.fillStyle = '#ffffff';
         ctx.fillText(labelString, metricsRef.current.x + 6, metricsRef.current.y - 5);
@@ -189,7 +157,7 @@ export default function VideoAnalyticsStation({
     };
 
     const handleSeeked = (): void => {
-      renderTrackingOverlay(); // Force frame bounding updates during timeline timeline slider scrubbing
+      renderTrackingOverlay(); // Force frame bounding updates during timeline slider scrubbing
     };
 
     // Standardize event target registration loops
@@ -211,27 +179,34 @@ export default function VideoAnalyticsStation({
     };
   }, [telemetryData, toggles]);
 
+  // Sync rendering pipeline triggers on parameters change
+  useEffect(() => {
+    renderTrackingOverlay();
+  }, [telemetryData, toggles]);
+
   return (
-    <div className="w-full bg-zinc-950 p-6 rounded-xl border border-zinc-800 font-mono shadow-2xl">
+    <div className="w-full bg-zinc-900/40 p-4 rounded-xl border border-zinc-800 flex flex-col gap-4">
       
       {/* MONITOR STATION NAVIGATION LAYER HEADER */}
-      <div className="flex items-center justify-between border-b border-zinc-800 pb-4 mb-4">
+      <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
         <div className="flex items-center gap-3">
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-          <h3 className="text-sm font-bold text-zinc-200 tracking-wider uppercase">{streamLabel}</h3>
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+          <h3 className="text-xs font-black tracking-widest text-zinc-300 uppercase">{streamLabel}</h3>
         </div>
-        <div className="text-xs text-zinc-500 bg-zinc-900 px-3 py-1 rounded border border-zinc-800">
-          QHD 1440p @ 60Hz TypeScript Deck | Frame: <span className="text-yellow-500 font-semibold">{playbackState.computedFrame}</span>
+        <div className="text-[10px] text-zinc-500 bg-zinc-950 px-2.5 py-1 rounded border border-zinc-850 font-mono">
+          Sync Frame Index: <span className="text-yellow-500 font-semibold">{playbackState.computedFrame}</span> / 600
         </div>
       </div>
 
       {/* CORE GRAPHICAL CANVAS CONTAINER VIEWPORT STACK */}
-      <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-zinc-900 bg-black shadow-inner">
+      <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-zinc-950 bg-black shadow-inner">
         <video 
           ref={videoRef}
           src={videoUrl}
-          className="w-full h-full object-contain"
+          className="w-full h-full object-cover opacity-85"
           preload="auto"
+          loop
+          muted
         />
 
         <canvas 
@@ -241,44 +216,46 @@ export default function VideoAnalyticsStation({
 
         {Object.keys(telemetryData).length === 0 && (
           <div className="absolute inset-0 bg-zinc-950/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center gap-3">
-            <div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-xs text-zinc-400">Awaiting Simulation Backend Process Ingestion Pipeline...</p>
+            <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-xs text-zinc-400 font-mono">Awaiting Ingestion Pipeline...</p>
           </div>
         )}
       </div>
 
       {/* MANUAL TIMELINE CONTROLLER LAYER */}
-      <div className="flex items-center gap-4 my-4 bg-zinc-900/40 p-3 rounded-lg border border-zinc-900">
+      <div className="flex items-center gap-4 bg-zinc-950 p-3 rounded-lg border border-zinc-850">
         <button 
           onClick={() => videoRef.current && (playbackState.isPlaying ? videoRef.current.pause() : videoRef.current.play())}
-          className="px-4 py-1.5 rounded text-xs font-bold transition-all bg-zinc-800 hover:bg-zinc-700 text-zinc-200 active:scale-95 min-w-[70px]"
+          className="px-4 py-1.5 rounded text-xs font-bold transition-all bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 active:scale-95 min-w-[70px] flex items-center gap-2 cursor-pointer font-mono"
         >
+          {playbackState.isPlaying ? <Pause className="w-3.5 h-3.5 text-yellow-500" /> : <Play className="w-3.5 h-3.5 text-emerald-500" />}
           {playbackState.isPlaying ? 'PAUSE' : 'PLAY'}
         </button>
-        <div className="flex-1 text-xs text-zinc-400 flex items-center justify-between">
-          <span>{playbackState.currentTime.toFixed(2)}s</span>
-          <div className="w-full mx-4 h-1 bg-zinc-800 rounded overflow-hidden relative">
+        
+        <div className="flex-grow text-xs text-zinc-400 flex items-center justify-between">
+          <span className="font-mono text-zinc-500">{playbackState.currentTime.toFixed(2)}s</span>
+          <div className="w-full mx-4 h-1 bg-zinc-900 rounded-full overflow-hidden relative">
             <div 
-              className="absolute left-0 top-0 h-full bg-green-500 transition-all duration-75"
+              className="absolute left-0 top-0 h-full bg-emerald-500 transition-all duration-75"
               style={{ width: `${(playbackState.currentTime / (playbackState.totalDuration || 1)) * 100}%` }}
             />
           </div>
-          <span>{(playbackState.totalDuration || 0).toFixed(2)}s</span>
+          <span className="font-mono text-zinc-500">{(playbackState.totalDuration || 10).toFixed(2)}s</span>
         </div>
       </div>
 
-      {/* SECTION D: THE INTERACTIVE TRACKING TOGGLE DECK PANEL */}
-      <div className="bg-zinc-900/60 rounded-lg p-4 border border-zinc-900 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* THE INTERACTIVE TRACKING TOGGLE DECK PANEL */}
+      <div className="bg-zinc-950 rounded-lg p-4 border border-zinc-850 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <label className="flex items-center gap-3 cursor-pointer select-none group">
           <input 
             type="checkbox"
             checked={toggles.showBBoxes}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setToggles({ ...toggles, showBBoxes: e.target.checked })}
-            className="accent-green-500 w-4 h-4 rounded bg-zinc-800 border-zinc-700 checked:bg-green-500 transition-all focus:ring-0"
+            className="accent-emerald-500 w-4 h-4 rounded bg-zinc-900 border-zinc-800 checked:bg-emerald-500 focus:ring-0 cursor-pointer"
           />
           <div className="flex flex-col">
-            <span className="text-xs font-bold text-zinc-300 group-hover:text-green-400 transition-colors">Show Dynamic Boxes</span>
-            <span className="text-[10px] text-zinc-500">Draw YOLO Target Coordinates</span>
+            <span className="text-xs font-bold text-zinc-300 group-hover:text-emerald-400 transition-colors font-mono">Show Dynamic Boxes</span>
+            <span className="text-[10px] text-zinc-500 font-mono">YOLO Segment Boundaries</span>
           </div>
         </label>
 
@@ -287,11 +264,11 @@ export default function VideoAnalyticsStation({
             type="checkbox"
             checked={toggles.showVelocities}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setToggles({ ...toggles, showVelocities: e.target.checked })}
-            className="accent-yellow-500 w-4 h-4 rounded bg-zinc-800 border-zinc-700 checked:bg-yellow-500 transition-all focus:ring-0"
+            className="accent-yellow-500 w-4 h-4 rounded bg-zinc-900 border-zinc-800 checked:bg-yellow-500 focus:ring-0 cursor-pointer"
           />
           <div className="flex flex-col">
-            <span className="text-xs font-bold text-zinc-300 group-hover:text-yellow-400 transition-colors">Show Velocity Trackers</span>
-            <span className="text-[10px] text-zinc-500">Render Homography Real Speed</span>
+            <span className="text-xs font-bold text-zinc-300 group-hover:text-yellow-400 transition-colors font-mono">Show Velocity Trackers</span>
+            <span className="text-[10px] text-zinc-500 font-mono">Homography Speed Calculation</span>
           </div>
         </label>
 
@@ -300,11 +277,11 @@ export default function VideoAnalyticsStation({
             type="checkbox"
             checked={toggles.filterMotorcycles}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setToggles({ ...toggles, filterMotorcycles: e.target.checked })}
-            className="accent-red-500 w-4 h-4 rounded bg-zinc-800 border-zinc-700 checked:bg-red-500 transition-all focus:ring-0"
+            className="accent-red-500 w-4 h-4 rounded bg-zinc-900 border-zinc-800 checked:bg-red-500 focus:ring-0 cursor-pointer"
           />
           <div className="flex flex-col">
-            <span className="text-xs font-bold text-zinc-400 group-hover:text-red-400 transition-colors">Hide Motorcycles</span>
-            <span className="text-[10px] text-zinc-600">Mask Out Two-Wheeler Overlay</span>
+            <span className="text-xs font-bold text-zinc-400 group-hover:text-red-400 transition-colors font-mono">Hide Motorcycles</span>
+            <span className="text-[10px] text-zinc-600 font-mono">Filter Two-Wheelers</span>
           </div>
         </label>
 
@@ -313,11 +290,11 @@ export default function VideoAnalyticsStation({
             type="checkbox"
             checked={toggles.filterLargeVehicles}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setToggles({ ...toggles, filterLargeVehicles: e.target.checked })}
-            className="accent-red-500 w-4 h-4 rounded bg-zinc-800 border-zinc-700 checked:bg-red-500 transition-all focus:ring-0"
+            className="accent-red-500 w-4 h-4 rounded bg-zinc-900 border-zinc-800 checked:bg-red-500 focus:ring-0 cursor-pointer"
           />
           <div className="flex flex-col">
-            <span className="text-xs font-bold text-zinc-400 group-hover:text-red-400 transition-colors">Hide Mapped Traffic</span>
-            <span className="text-[10px] text-zinc-600">Mask Cars/Trucks/Buses Data</span>
+            <span className="text-xs font-bold text-zinc-400 group-hover:text-red-400 transition-colors font-mono">Hide Large Traffic</span>
+            <span className="text-[10px] text-zinc-600 font-mono">Filter Cars/Buses/Trucks</span>
           </div>
         </label>
       </div>
