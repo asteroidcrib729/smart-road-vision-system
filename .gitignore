@@ -13,3 +13,29 @@ Thumbs.db
 
 # Node dependencies (general)
 node_modules/
+
+
+# Ignore Backend Output, Model Weights, and Python Cache
+srvs-backend-core/output/
+srvs-backend-core/data/weights/
+*.pt
+*.pth
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Python Virtual Environments
+**/.venv/
+**/venv/
+**/env/
+**/ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Next.js Build Outputs (root safety)
+.next/
+out/
+build/
+
+# Documentation Directory
+Additions/**

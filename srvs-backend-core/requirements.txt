@@ -1,0 +1,17 @@
+aiofiles
+google-genai
+gradio-client
+httpx
+nest_asyncio
+numpy
+opencv-python-headless==4.10.0.84
+paddleocr>=2.7.0.0
+paddlepaddle>=2.5.0
+pillow
+scipy>=1.10.1
+torch>=2.0.1
+torchvision>=0.15.2
+ultralytics>=8.1.0
+fastapi>=0.110.0
+uvicorn>=0.28.0
+gdown>=5.1.0
