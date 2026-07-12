@@ -14,12 +14,13 @@ Thumbs.db
 # Node dependencies (general)
 node_modules/
 
-
 # Ignore Backend Output, Model Weights, and Python Cache
 srvs-backend-core/output/
 srvs-backend-core/data/weights/
+SmartRoadVisionSystem/output/
 *.pt
 *.pth
+__pycache__/
 **/__pycache__/
 *.py[cod]
 *$py.class
