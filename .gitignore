@@ -33,6 +33,13 @@ __pycache__/
 pip-log.txt
 pip-delete-this-directory.txt
 
+# Environment Variable Files
+.env
+.env.*
+srvs-backend-core/.env
+srvs-frontend-next/.env
+
+
 # Next.js Build Outputs (root safety)
 .next/
 out/

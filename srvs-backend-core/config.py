@@ -1,6 +1,14 @@
 # Configuration settings for Smart Road Vision System (V4 Backend Plan)
 import os
 
+try:
+    from dotenv import load_dotenv
+    # Load .env file from the same directory as config.py
+    config_dir = os.path.dirname(os.path.abspath(__file__))
+    load_dotenv(os.path.join(config_dir, ".env"))
+except ImportError:
+    pass
+
 class Config:
     # --- Paths ---
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
