@@ -1,0 +1,13 @@
+# pyrefly.toml
+project-includes = ["srvs-backend-core"]
+search-path = ["./srvs-backend-core"]
+python-interpreter-path = "./srvs-backend-core/.venv/Scripts/python.exe"
+python-version = "3.12"
+check-unannotated-defs = false
+project-excludes = [
+    "**/node_modules",
+    "**/srvs-frontend-next",
+    "**/Additions",
+    "**/.venv",
+    "**/__pycache__"
+]

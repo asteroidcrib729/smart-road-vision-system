@@ -1,4 +1,49 @@
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
 
+# OS files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+
+# Node dependencies (general)
+node_modules/
+
+# Ignore Backend Output, Model Weights, and Python Cache
+srvs-backend-core/output/
+srvs-backend-core/data/weights/
 SmartRoadVisionSystem/output/
+*.pt
+*.pth
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
 
-__pycache__
+# Python Virtual Environments
+**/.venv/
+**/venv/
+**/env/
+**/ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Environment Variable Files
+.env
+.env.*
+srvs-backend-core/.env
+srvs-frontend-next/.env
+
+
+# Next.js Build Outputs (root safety)
+.next/
+out/
+build/
+
+# Documentation Directory
+Additions/**
