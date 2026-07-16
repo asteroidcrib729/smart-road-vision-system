@@ -28,7 +28,7 @@ export default function Home() {
   const [activeMediaFeed, setActiveMediaFeed] = useState<string>('SRVS - Footage of Front Plates - New.mp4');
   const [mediaFeeds, setMediaFeeds] = useState<string[]>([
     'SRVS - Footage of Front Plates - New.mp4',
-    'SRVS - Footage of Rear Plates - Alt.mp5'
+    'SRVS - Footage of Rear Plates - Alt.mp4'
   ]);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [processProgress, setProcessProgress] = useState<number>(0);
@@ -324,7 +324,10 @@ export default function Home() {
   };
 
   const getVideoUrl = (feed: string) => {
-    if (feed.endsWith('.mp4') && feed.length > 25) {
+    if (feed === 'SRVS - Footage of Front Plates - New.mp4' || feed === 'SRVS - Footage of Rear Plates - Alt.mp4') {
+      return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+    }
+    if (feed.endsWith('.mp4')) {
       return `${API_URL}/videos/${feed}`;
     }
     return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";

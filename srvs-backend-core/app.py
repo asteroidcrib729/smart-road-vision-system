@@ -155,7 +155,7 @@ async def api_stream_events():
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
 @app.get("/api/ledger")
-async def api_get_ledger(category: str = Query("Motorcycle", regex="^(Motorcycle|Auto-rickshaw|Large Vehicles)$")):
+async def api_get_ledger(category: str = Query("Motorcycle", pattern="^(Motorcycle|Auto-rickshaw|Large Vehicles)$")):
     """Fetch structured SQLite ledger records depending on category."""
     if not os.path.exists(Config.DB_PATH):
         return []

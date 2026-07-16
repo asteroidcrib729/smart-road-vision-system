@@ -268,52 +268,52 @@ class VideoPipelineAsync:
 
                 detections = self.dummy_detect(frame_count, stream_type)
 
-            # Filter classes based on stream logic
-            filtered_dets = [d for d in detections if d['class'] in processor.target_classes]
+                # Filter classes based on stream logic
+                filtered_dets = [d for d in detections if d['class'] in processor.target_classes]
 
-            features = []
-            for det in filtered_dets:
-                bbox = det['bbox']
-                crop = frame[bbox[1]:bbox[3], bbox[0]:bbox[2]]
-                feat = self.reid.extract(crop)
-                features.append(feat)
+                features = []
+                for det in filtered_dets:
+                    bbox = det['bbox']
+                    crop = frame[bbox[1]:bbox[3], bbox[0]:bbox[2]]
+                    feat = self.reid.extract(crop)
+                    features.append(feat)
 
-            # Tracker update
-            active_tracks, removed_tracks = tracker.update(filtered_dets, features)
+                # Tracker update
+                active_tracks, removed_tracks = tracker.update(filtered_dets, features)
 
-            tracks_data = []
-            for track in active_tracks:
-                track_id = track['track_id']
-                bbox = track['bbox']
-                cls_name = track['class']
-                crop = frame[max(0, bbox[1]):bbox[3], max(0, bbox[0]):bbox[2]]
+                tracks_data = []
+                for track in active_tracks:
+                    track_id = track['track_id']
+                    bbox = track['bbox']
+                    cls_name = track['class']
+                    crop = frame[max(0, bbox[1]):bbox[3], max(0, bbox[0]):bbox[2]]
 
-                processor.process_best_snapshot(track_id, crop, bbox)
-                processor.track_states[track_id]['class_name'] = cls_name
+                    processor.process_best_snapshot(track_id, crop, bbox)
+                    processor.track_states[track_id]['class_name'] = cls_name
 
-                # Spatial-temporal state mapping
-                speed = 42.1 if cls_name == 'Bus' else (78.4 if cls_name == 'Motorcycle' else 49.8)
-                violation = (cls_name == 'Motorcycle' and frame_count > 10) or (cls_name == 'Car' and speed > 60)
-                clean_id = int(re.sub(r"\D", "", track_id)) if re.sub(r"\D", "", track_id) else 1
+                    # Spatial-temporal state mapping
+                    speed = 42.1 if cls_name == 'Bus' else (78.4 if cls_name == 'Motorcycle' else 49.8)
+                    violation = (cls_name == 'Motorcycle' and frame_count > 10) or (cls_name == 'Car' and speed > 60)
+                    clean_id = int(re.sub(r"\D", "", track_id)) if re.sub(r"\D", "", track_id) else 1
 
-                tracks_data.append({
-                    "track_id": clean_id,
-                    "bbox": bbox,
-                    "class_name": cls_name,
-                    "speed": speed,
-                    "violation": violation
-                })
+                    tracks_data.append({
+                        "track_id": clean_id,
+                        "bbox": bbox,
+                        "class_name": cls_name,
+                        "speed": speed,
+                        "violation": violation
+                    })
 
-                await processor.finalize_track(track_id)
+                    await processor.finalize_track(track_id)
 
-            # Publish telemetry data for current frame!
-            if tracks_data:
-                event_manager.publish("telemetry", {
-                    "frame": frame_count,
-                    "tracks": tracks_data
-                })
+                # Publish telemetry data for current frame!
+                if tracks_data:
+                    event_manager.publish("telemetry", {
+                        "frame": frame_count,
+                        "tracks": tracks_data
+                    })
 
-            await asyncio.sleep(0.1) # Yield loop for SSE stream performance
+                await asyncio.sleep(0.1) # Yield loop for SSE stream performance
         finally:
             if cap:
                 cap.release()
