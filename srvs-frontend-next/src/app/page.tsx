@@ -325,12 +325,12 @@ export default function Home() {
 
   const getVideoUrl = (feed: string) => {
     if (feed === 'SRVS - Footage of Front Plates - New.mp4' || feed === 'SRVS - Footage of Rear Plates - Alt.mp4') {
-      return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+      return "https://photo-sphere-viewer-data.netlify.app/assets/equirectangular-video/Ayutthaya_HD.mp4";
     }
     if (feed.endsWith('.mp4')) {
       return `${API_URL}/videos/${feed}`;
     }
-    return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+    return "https://photo-sphere-viewer-data.netlify.app/assets/equirectangular-video/Ayutthaya_HD.mp4";
   };
 
   return (
