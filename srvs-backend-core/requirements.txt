@@ -3,7 +3,7 @@ google-genai
 gradio-client
 httpx
 nest_asyncio
-numpy
+numpy<2.0.0
 opencv-python-headless==4.10.0.84
 paddleocr>=2.7.0.0
 paddlepaddle>=2.5.0
