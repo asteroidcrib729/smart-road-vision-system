@@ -35,13 +35,15 @@ class DatabaseHandler:
             )
         ''')
 
+        # Added Class_Name column to distinguish between Cars, Trucks, and Buses
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Large_Vehicles (
                 Tracking_ID TEXT PRIMARY KEY,
                 Read_Number_Plate TEXT,
                 Violation_Detected BOOLEAN,
                 Speed REAL,
-                Timestamp TEXT
+                Timestamp TEXT,
+                Class_Name TEXT
             )
         ''')
 
@@ -74,14 +76,14 @@ class DatabaseHandler:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, sync_log)
 
-    async def log_large_vehicle(self, track_id, plate, violation, speed, timestamp):
+    async def log_large_vehicle(self, track_id, plate, violation, speed, timestamp, class_name):
         def sync_log():
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR REPLACE INTO Large_Vehicles (Tracking_ID, Read_Number_Plate, Violation_Detected, Speed, Timestamp)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (track_id, plate, violation, speed, timestamp))
+                INSERT OR REPLACE INTO Large_Vehicles (Tracking_ID, Read_Number_Plate, Violation_Detected, Speed, Timestamp, Class_Name)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (track_id, plate, violation, speed, timestamp, class_name))
             conn.commit()
             conn.close()
         loop = asyncio.get_event_loop()
