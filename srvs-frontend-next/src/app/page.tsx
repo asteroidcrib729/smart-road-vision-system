@@ -449,7 +449,7 @@ export default function Home() {
         <div className="flex items-center gap-4 text-zinc-700">
           <span className="flex items-center gap-1.5">
             <span className={`w-1.5 h-1.5 rounded-full ${isBackendConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-            {isBackendConnected ? "Connected to Azure API" : "Simulated Local Session"}
+            {isBackendConnected ? "Connected to Backend Server" : "Simulated Local Session"}
           </span>
           <span>Secure Terminal Connection Active (TLS 1.3)</span>
         </div>

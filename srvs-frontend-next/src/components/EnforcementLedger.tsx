@@ -13,13 +13,13 @@ export default function EnforcementLedger({ snapshots, onReview }: EnforcementLe
 
   const motorcyclesCount = snapshots.filter(s => s.className === 'Motorcycle').length;
   const rickshawsCount = snapshots.filter(s => s.className === 'Auto-rickshaw').length;
-  const largeVehiclesCount = snapshots.filter(s => ['Car', 'Bus'].includes(s.className)).length;
+  const largeVehiclesCount = snapshots.filter(s => ['Car', 'Bus', 'Truck'].includes(s.className)).length;
 
   const filteredSnapshots = snapshots
     .filter(snap => {
       if (ledgerCategory === 'Motorcycle') return snap.className === 'Motorcycle';
       if (ledgerCategory === 'Auto-rickshaw') return snap.className === 'Auto-rickshaw';
-      return ['Car', 'Bus'].includes(snap.className);
+      return ['Car', 'Bus', 'Truck'].includes(snap.className);
     })
     .filter(snap => snap.plateNumber.toLowerCase().includes(ledgerSearchQuery.toLowerCase()));
 
@@ -28,11 +28,10 @@ export default function EnforcementLedger({ snapshots, onReview }: EnforcementLe
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 border-b border-zinc-800 pb-4 mb-6">
         <div>
           <h3 className="text-xs font-black tracking-widest text-zinc-300 uppercase">ZONE 3: ENFORCEMENT LEDGER</h3>
-          <p className="text-xs text-zinc-500">Active SQLITE interface synchronized dynamically with deep-learning extraction modules</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-          {/* Ledger categories matching original text specs */}
+          {/* Ledger categories */}
           <div className="flex bg-zinc-950 p-1 rounded-md border border-zinc-850 text-xs">
             <button
               onClick={() => setLedgerCategory('Motorcycle')}
@@ -60,7 +59,7 @@ export default function EnforcementLedger({ snapshots, onReview }: EnforcementLe
             </button>
           </div>
 
-          {/* Search filter */}
+          {/* Search filter - positioned adjacent on the right */}
           <div className="relative flex-grow lg:flex-grow-0">
             <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-zinc-500" />
             <input 

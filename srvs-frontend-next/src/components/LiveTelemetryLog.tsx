@@ -16,17 +16,17 @@ export default function LiveTelemetryLog({ logs }: LiveTelemetryLogProps) {
   }, [logs]);
 
   return (
-    <div className="bg-zinc-900/40 p-4 rounded-xl border border-zinc-800 flex-grow flex flex-col justify-between max-h-[515px] h-full">
-      <div>
-        <div className="flex items-center justify-between border-b border-zinc-800 pb-3 mb-3">
+    <div className="bg-zinc-900/40 p-4 rounded-xl border border-zinc-800 flex flex-col flex-grow h-full">
+      <div className="flex flex-col flex-grow">
+        <div className="flex items-center justify-between border-b border-zinc-800 pb-3 mb-3 shrink-0">
           <span className="text-xs font-black tracking-widest text-zinc-300 uppercase">ZONE 2: TELEMETRY ACTIVITY LOG</span>
           <span className="text-[9px] bg-red-950 text-red-400 border border-red-900/60 rounded px-2 py-0.5">Stream Output</span>
         </div>
 
-        {/* Scrollable event listings */}
+        {/* Scrollable event listings - flex-grow h-0 stretches to fill card height dynamically */}
         <div 
           ref={containerRef}
-          className="flex flex-col gap-2.5 h-[380px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-zinc-800"
+          className="flex flex-col gap-2.5 flex-grow h-0 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-zinc-800 mb-2"
         >
           {logs.map((log, index) => (
             <div 
@@ -50,7 +50,7 @@ export default function LiveTelemetryLog({ logs }: LiveTelemetryLogProps) {
         </div>
       </div>
 
-      <div className="pt-2 text-right border-t border-zinc-900">
+      <div className="pt-2 text-right border-t border-zinc-900 shrink-0">
         <span className="text-[10px] text-zinc-500">Live Cadence Polling...</span>
       </div>
     </div>
