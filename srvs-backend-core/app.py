@@ -70,7 +70,7 @@ def dump_db_to_csv():
         # 3. Export Large Vehicles
         cursor.execute("SELECT * FROM Large_Vehicles")
         rows = cursor.fetchall()
-        headers = ["Tracking_ID", "Read_Number_Plate", "Violation_Detected", "Speed", "Timestamp"]
+        headers = ["Tracking_ID", "Read_Number_Plate", "Violation_Detected", "Speed", "Timestamp", "Class_Name"]
         csv_path = os.path.join(Config.OUTPUT_DIR, "heavy_vehicle_velocities.csv")
         with open(csv_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
@@ -179,6 +179,8 @@ async def api_get_ledger(category: str = Query("Motorcycle", pattern="^(Motorcyc
     records = []
     
     try:
+        import time
+        cache_ts = int(time.time())
         if category == "Motorcycle":
             cursor.execute("SELECT * FROM Motorcycles")
             for r in cursor.fetchall():
@@ -187,8 +189,8 @@ async def api_get_ledger(category: str = Query("Motorcycle", pattern="^(Motorcyc
                     "trackId": int(r['Tracking_ID']),
                     "className": "Motorcycle",
                     "timestamp": r['Timestamp'] if r['Timestamp'] else "2026-06-02 16:10:15",
-                    "rawImage": f"/static/Motorcycles/{r['Tracking_ID']}.jpg",
-                    "enhancedImage": f"/static/Restored_Dashboards/Restored_{r['Tracking_ID']}.jpg",
+                    "rawImage": f"/static/Motorcycles/{r['Tracking_ID']}.jpg?t={cache_ts}",
+                    "enhancedImage": f"/static/Restored_Dashboards/Restored_{r['Tracking_ID']}.jpg?t={cache_ts}",
                     "plateNumber": r['Read_Number_Plate'] or "Missing/Obstructed",
                     "ocrMethod": "Local OCR (PaddleOCR v4)" if r['Read_Number_Plate'] and r['Read_Number_Plate'] != "Missing/Obstructed" else "Cloud API Fallback (Gemini)",
                     "confidence": 94.5 if r['Read_Number_Plate'] and r['Read_Number_Plate'] != "Missing/Obstructed" else 98.2,
@@ -203,8 +205,8 @@ async def api_get_ledger(category: str = Query("Motorcycle", pattern="^(Motorcyc
                     "trackId": int(r['Tracking_ID']),
                     "className": "Auto-rickshaw",
                     "timestamp": r['Timestamp'] if r['Timestamp'] else "2026-06-02 16:11:04",
-                    "rawImage": f"/static/Auto_Rickshaws/{r['Tracking_ID']}.jpg",
-                    "enhancedImage": f"/static/Auto_Rickshaws/{r['Tracking_ID']}.jpg",
+                    "rawImage": f"/static/Auto_Rickshaws/{r['Tracking_ID']}.jpg?t={cache_ts}",
+                    "enhancedImage": f"/static/Auto_Rickshaws/{r['Tracking_ID']}.jpg?t={cache_ts}",
                     "plateNumber": r['Read_Number_Plate'] or "Missing/Obstructed",
                     "ocrMethod": "Local OCR (PaddleOCR v4)",
                     "confidence": 91.2,
@@ -214,13 +216,14 @@ async def api_get_ledger(category: str = Query("Motorcycle", pattern="^(Motorcyc
         else: # Large Vehicles
             cursor.execute("SELECT * FROM Large_Vehicles")
             for r in cursor.fetchall():
+                cls_name = r['Class_Name'] if 'Class_Name' in r.keys() and r['Class_Name'] else "Car"
                 records.append({
                     "id": f"large-{r['Tracking_ID']}",
                     "trackId": int(r['Tracking_ID']),
-                    "className": "Bus",
+                    "className": cls_name,
                     "timestamp": r['Timestamp'] if r['Timestamp'] else "2026-06-02 16:12:59",
-                    "rawImage": f"/static/Large_Vehicles/{r['Tracking_ID']}.jpg",
-                    "enhancedImage": f"/static/Large_Vehicles/{r['Tracking_ID']}.jpg",
+                    "rawImage": f"/static/Large_Vehicles/{r['Tracking_ID']}.jpg?t={cache_ts}",
+                    "enhancedImage": f"/static/Large_Vehicles/{r['Tracking_ID']}.jpg?t={cache_ts}",
                     "plateNumber": r['Read_Number_Plate'] or "Missing/Obstructed",
                     "ocrMethod": "Local OCR (PaddleOCR v4)",
                     "confidence": 94.5,

@@ -71,7 +71,7 @@ export default function SessionControlPanel({
               value={activeMediaFeed}
               onChange={(e) => setActiveMediaFeed(e.target.value)}
               disabled={isProcessing}
-              className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded px-3 py-2 outline-none focus:border-emerald-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed font-mono w-full sm:w-80"
+              className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded px-3 py-2 outline-none focus:border-emerald-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed font-mono w-full sm:w-[480px]"
             >
               {mediaFeeds.map(feed => (
                 <option key={feed} value={feed}>
@@ -97,10 +97,11 @@ export default function SessionControlPanel({
             
             <button 
               onClick={onReset}
-              className="p-2 bg-zinc-950 border border-zinc-800 hover:border-zinc-700 hover:text-zinc-200 text-zinc-400 rounded transition-all cursor-pointer"
-              title="Reset Workspace"
+              className="flex items-center gap-2 px-3 py-2 bg-red-950/60 hover:bg-red-800 text-red-200 hover:text-white border border-red-900 hover:border-red-700 rounded text-xs font-bold transition-all cursor-pointer hover:scale-[1.02] active:scale-95 shadow-[0_0_8px_rgba(220,38,38,0.15)]"
+              title="Interrupt Engine & Reset Workspace"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>INTERRUPT ENGINE</span>
             </button>
           </div>
         </div>
@@ -138,20 +139,15 @@ export default function SessionControlPanel({
         </form>
       </div>
 
-      {/* Error & Ingestion Indicators Row */}
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-t border-zinc-900 pt-3 mt-1">
-        {/* Error reporting */}
-        <div className="flex-grow">
-          {(validationError || downloadError) && (
-            <div className="flex items-center gap-2 text-rose-400 text-[10px] font-bold">
-              <AlertCircle className="w-3.5 h-3.5" />
-              <span>{validationError || downloadError}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Ingestion Engine state indicators */}
-        <div className="w-full md:w-1/3 flex items-center gap-4 bg-zinc-950 p-2.5 rounded border border-zinc-800/60 shrink-0">
+      {/* Ingestion Engine state indicators */}
+      <div className="border-t border-zinc-900 pt-3 mt-1 flex flex-col gap-2">
+        {(validationError || downloadError) && (
+          <div className="flex items-center gap-2 text-rose-400 text-[10px] font-bold">
+            <AlertCircle className="w-3.5 h-3.5" />
+            <span>{validationError || downloadError}</span>
+          </div>
+        )}
+        <div className="w-full flex items-center gap-4 bg-zinc-950 p-2.5 rounded border border-zinc-800/60">
           <div className="flex-grow">
             <div className="flex justify-between items-center mb-1 text-[10px] font-bold text-zinc-400">
               <span>INGESTION STATUS</span>

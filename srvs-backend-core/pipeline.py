@@ -4,6 +4,7 @@ import asyncio
 import os
 import re
 import datetime
+import torch
 
 from config import Config
 from utils.db_handler import DatabaseHandler
@@ -17,7 +18,11 @@ from ultralytics import YOLO
 # Global API limit cooldown lock (prevents exceeding 15 Requests Per Minute)
 api_cooldown_lock = asyncio.Lock()
 
-# Dummy placeholders for TransReID and DeepOCSORT tracking logic.
+# Dynamic GPU / CPU device selection for maximum performance
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"[SYSTEM] Selected processing device: {device.upper()}")
+
+# Dummy placeholders for TransReID and UVTP modules
 class TransReIDModule:
     """
     Spatial-Temporal Vehicle Re-Identification Module using TransReID.
@@ -37,21 +42,73 @@ class UVTPModule:
             return True
         return False
 
+
 class DeepOCSORTModule:
     """
-    DeepOCSORT Multi-Object Tracker.
-    Fuses bounding box spatial information with TransReID appearance features.
+    Spatial IoU Multi-Object Tracker.
+    Fuses bounding box spatial information to track vehicles dynamically across frames.
     """
     def __init__(self):
-        self.tracks = {}
+        self.tracks = {} # track_id -> {'bbox': bbox, 'class': cls, 'age': 0}
         self.next_id = 1
+        
     def update(self, detections, features):
         active = []
+        removed = []
+        updated_track_ids = set()
+        
         for d in detections:
-            track_id = f"ID_{self.next_id}"
-            self.next_id += 1
-            active.append({'track_id': track_id, 'bbox': d['bbox'], 'class': d['class']})
-        return active, []
+            bbox = d['bbox']
+            cls = d['class']
+            
+            best_track_id = None
+            best_iou = 0.0
+            
+            for tid, tinfo in self.tracks.items():
+                if tid in updated_track_ids:
+                    continue
+                
+                # Compute Spatial IoU
+                tb = tinfo['bbox']
+                x1 = max(bbox[0], tb[0])
+                y1 = max(bbox[1], tb[1])
+                x2 = min(bbox[2], tb[2])
+                y2 = min(bbox[3], tb[3])
+                
+                if x2 > x1 and y2 > y1:
+                    inter_area = (x2 - x1) * (y2 - y1)
+                    union_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) + (tb[2] - tb[0]) * (tb[3] - tb[1]) - inter_area
+                    iou = inter_area / float(union_area) if union_area > 0 else 0
+                    
+                    if iou > 0.15 and iou > best_iou:
+                        best_iou = iou
+                        best_track_id = tid
+                        
+            if best_track_id is not None:
+                self.tracks[best_track_id] = {'bbox': bbox, 'class': cls, 'age': 0}
+                updated_track_ids.add(best_track_id)
+                active.append({'track_id': best_track_id, 'bbox': bbox, 'class': cls})
+            else:
+                # Spawn a new unique track
+                new_id = f"ID_{self.next_id}"
+                self.next_id += 1
+                self.tracks[new_id] = {'bbox': bbox, 'class': cls, 'age': 0}
+                updated_track_ids.add(new_id)
+                active.append({'track_id': new_id, 'bbox': bbox, 'class': cls})
+                
+        # Handle lost/removed tracks
+        lost_ids = []
+        for tid in list(self.tracks.keys()):
+            if tid not in updated_track_ids:
+                self.tracks[tid]['age'] += 1
+                if self.tracks[tid]['age'] > 5: # Finalize track if lost for more than 5 frames
+                    removed.append({'track_id': tid})
+                    lost_ids.append(tid)
+                    
+        for tid in lost_ids:
+            del self.tracks[tid]
+            
+        return active, removed
 
 
 class BaseStreamProcessor:
@@ -89,7 +146,7 @@ class BaseStreamProcessor:
 
         state = self.track_states[track_id]
 
-        # Heuristic Logic: prioritize Area first, then sharpness if Area is similar
+        # Prioritize larger bounding box area first, then image sharpness (Laplacian variance)
         if state['best_crop'] is None or (area > state['max_area'] * 0.9 and lap_var > state['max_laplacian']):
             state['best_crop'] = crop.copy()
             state['max_area'] = area
@@ -113,43 +170,40 @@ class StreamA_Processor(BaseStreamProcessor):
 
         self.processed_tracks.add(clean_id)
         crop = state['best_crop']
+        class_name = state.get('class_name', 'Car')
         speed = state.get('speed', 42.1)
         violation = state.get('violation', False)
+        
+        # Local OCR Only (PaddleOCR v4) - No API-based OCR fallback for front-facing vehicles
         plate_text = None
-
         if hasattr(self, 'ocr_engine') and self.ocr_engine:
             plate_text, conf = self.ocr_engine.read(crop)
             if not plate_text or conf < 0.5:
                 plate_text = None
 
         if not plate_text:
-            async with api_cooldown_lock:
-                plate_text = await self.plate_api.extract_plate(crop)
-                await asyncio.sleep(4.2)
-
-        if not plate_text:
             plate_text = "Missing/Obstructed"
             violation = True
 
         # Save Snapshot
-        clean_id = re.sub(r"\D", "", track_id)
         save_path = os.path.join(Config.OUTPUT_LARGE_VEHICLES, f"{clean_id}.jpg")
         cv2.imwrite(save_path, crop)
 
-        # Save to DB with Speed and Timestamp
+        # Save to DB with Speed, Timestamp, and actual detected Class_Name
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         time_only = datetime.datetime.now().strftime("%H:%M:%S")
-        await self.db.log_large_vehicle(clean_id, plate_text, violation, speed, now_str)
+        await self.db.log_large_vehicle(clean_id, plate_text, violation, speed, now_str, class_name)
         
         # Publish log event
         event_manager.publish("log", {
             "time": time_only,
-            "message": f"🤖 [Stream A] Processed Track #{clean_id}: Plate={plate_text}, Speed={speed} km/h, Violation={violation}",
+            "message": f"🤖 [Stream A] Processed {class_name} #{clean_id}: Plate={plate_text}, Speed={speed} km/h, Violation={violation}",
             "type": "info" if not violation else "warning"
         })
         
-        del self.track_states[track_id]
-        print(f"[Stream A] Processed {track_id}: Plate={plate_text}, Violation={violation}")
+        if track_id in self.track_states:
+            del self.track_states[track_id]
+        print(f"[Stream A] Processed {track_id} ({class_name}): Plate={plate_text}, Violation={violation}")
 
 
 class StreamB_Processor(BaseStreamProcessor):
@@ -172,26 +226,27 @@ class StreamB_Processor(BaseStreamProcessor):
         class_name = state['class_name']
         speed = state.get('speed', 78.4)
         violation = state.get('violation', False)
+        
+        # Local OCR (PaddleOCR v4)
         plate_text = None
-
         if hasattr(self, 'ocr_engine') and self.ocr_engine:
             plate_text, conf = self.ocr_engine.read(crop)
             if not plate_text or conf < 0.5:
                 plate_text = None
 
-        if not plate_text:
-            async with api_cooldown_lock:
-                plate_text = await self.plate_api.extract_plate(crop)
-                await asyncio.sleep(4.2)
-
-        if not plate_text:
-            plate_text = "Missing/Obstructed"
-
-        clean_id = re.sub(r"\D", "", track_id)
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         time_only = datetime.datetime.now().strftime("%H:%M:%S")
 
         if class_name == "Motorcycle":
+            # API-based fallback OCR and Super-Resolution Enhancement are for Motorcycles only
+            if not plate_text:
+                async with api_cooldown_lock:
+                    plate_text = await self.plate_api.extract_plate(crop)
+                    await asyncio.sleep(4.2)
+
+            if not plate_text:
+                plate_text = "Missing/Obstructed"
+
             helmet_detected = False
             async with api_cooldown_lock:
                 helmet_detected = await self.helmet_api.extract_helmet(crop)
@@ -204,7 +259,7 @@ class StreamB_Processor(BaseStreamProcessor):
             save_path = os.path.join(Config.OUTPUT_MOTORCYCLES, f"{clean_id}.jpg")
             cv2.imwrite(save_path, crop)
 
-            # Dispatch to Real-ESRGAN API
+            # Dispatch to Real-ESRGAN API (for Motorcycles only)
             restored_path = os.path.join(Config.OUTPUT_RESTORED, f"Restored_{clean_id}.jpg")
             asyncio.create_task(self.enhancement_api.enhance_image(crop, restored_path))
 
@@ -219,6 +274,10 @@ class StreamB_Processor(BaseStreamProcessor):
             print(f"[Stream B] Processed {track_id} (Motorcycle): Plate={plate_text}, Helmet={helmet_detected}, Violation={violation}")
 
         elif class_name == "Auto-rickshaw":
+            # Auto-rickshaws utilize local OCR only and do not use API OCR or Real-ESRGAN
+            if not plate_text:
+                plate_text = "Missing/Obstructed"
+
             save_path = os.path.join(Config.OUTPUT_AUTORICKSHAWS, f"{clean_id}.jpg")
             cv2.imwrite(save_path, crop)
             await self.db.log_auto_rickshaw(clean_id, plate_text, violation, speed, now_str)
@@ -230,7 +289,8 @@ class StreamB_Processor(BaseStreamProcessor):
             })
             print(f"[Stream B] Processed {track_id} (Auto-Rickshaw): Plate={plate_text}, Violation={violation}")
 
-        del self.track_states[track_id]
+        if track_id in self.track_states:
+            del self.track_states[track_id]
 
 
 class VideoPipelineAsync:
@@ -239,10 +299,9 @@ class VideoPipelineAsync:
         self.stream_a = StreamA_Processor()
         self.stream_b = StreamB_Processor()
 
-        # Load the precise Open Images V7 YOLOv8 model specified in Config
+        # Load precise YOLOv8 model specified in Config
         model_path = os.path.join(Config.BASE_DIR, "data", "weights", Config.YOLO_MODEL_PATH)
         if not os.path.exists(model_path):
-            # Fallback to local root or auto-download if the weights folder is empty
             model_path = Config.YOLO_MODEL_PATH
         self.model = YOLO(model_path)
 
@@ -271,7 +330,6 @@ class VideoPipelineAsync:
         total_frames = max_frames
         if cap and cap.isOpened():
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            # Just publish the total frame count metadata event once on Stream A
             if stream_type == 'A':
                 event_manager.publish("metadata", {"total_frames": total_frames})
 
@@ -287,17 +345,18 @@ class VideoPipelineAsync:
                 if frame is None:
                     frame = np.zeros((720, 1280, 3), dtype=np.uint8) # Dummy frame
 
-                # Run real YOLOv8 inference on the frame
+                # Run YOLOv8 inference explicitly targeting the active GPU/CUDA device
                 detections = []
                 if cap and cap.isOpened():
-                    results = self.model(frame, verbose=False)[0]
+                    results = self.model(frame, verbose=False, device=device)[0]
                     for box in results.boxes:
                         cls_id = int(box.cls[0])
                         conf = float(box.conf[0])
                         if conf > Config.DETECTION_CONF_THRESH:
                             bbox = [int(x) for x in box.xyxy[0].tolist()]
-                            # Map standard COCO / Open Images V7 class names case-insensitively
                             raw_name = results.names[cls_id].lower()
+                            
+                            # Normalise and capitalize object classifications case-insensitively
                             if raw_name == "motorcycle":
                                 detections.append({'bbox': bbox, 'class': 'Motorcycle'})
                             elif raw_name in ["car", "automobile"]:
@@ -309,7 +368,6 @@ class VideoPipelineAsync:
                             elif raw_name in ["auto-rickshaw", "rickshaw"]:
                                 detections.append({'bbox': bbox, 'class': 'Auto-rickshaw'})
                 else:
-                    # Fallback to simulated detections if video file is missing
                     if stream_type == 'A' and frame_count % 5 == 0:
                         detections.append({'bbox': [50, 50, 200, 200], 'class': 'Car'})
                     elif stream_type == 'B' and frame_count % 7 == 0:
@@ -325,9 +383,10 @@ class VideoPipelineAsync:
                     feat = self.reid.extract(crop)
                     features.append(feat)
 
-                # Tracker update
+                # Tracker update returning active and newly removed tracks
                 active_tracks, removed_tracks = tracker.update(filtered_dets, features)
 
+                # 1. Update best crop snapshot details for active tracks
                 tracks_data = []
                 for track in active_tracks:
                     track_id = track['track_id']
@@ -357,6 +416,9 @@ class VideoPipelineAsync:
                         "violation": violation
                     })
 
+                # 2. Finalize tracks when they are officially lost / exit the frame
+                for track in removed_tracks:
+                    track_id = track['track_id']
                     await processor.finalize_track(track_id)
 
                 # Publish telemetry data for current frame
@@ -367,14 +429,17 @@ class VideoPipelineAsync:
                     })
 
                 await asyncio.sleep(0.1) # Yield loop for SSE stream performance
+
+            # 3. Finalize any remaining active tracks at the end of the video
+            for track_id in list(processor.track_states.keys()):
+                await processor.finalize_track(track_id)
+
         finally:
             if cap:
                 cap.release()
 
     async def run_all(self):
         print("Starting Async Dual-Stream Pipeline...")
-        
-        # Check filename case-insensitively to isolate and process targeted cameras only
         run_stream_a = True
         run_stream_b = True
         
