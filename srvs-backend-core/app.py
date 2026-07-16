@@ -50,7 +50,7 @@ def dump_db_to_csv():
         # 1. Export Motorcycles
         cursor.execute("SELECT * FROM Motorcycles")
         rows = cursor.fetchall()
-        headers = ["Tracking_ID", "Read_Number_Plate", "Helmet_Detected", "Violation_Detected"]
+        headers = ["Tracking_ID", "Read_Number_Plate", "Helmet_Detected", "Violation_Detected", "Speed", "Timestamp"]
         csv_path = os.path.join(Config.OUTPUT_DIR, "motorcycle_violations.csv")
         with open(csv_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
@@ -60,7 +60,7 @@ def dump_db_to_csv():
         # 2. Export Auto-Rickshaws
         cursor.execute("SELECT * FROM Auto_Rickshaws")
         rows = cursor.fetchall()
-        headers = ["Tracking_ID", "Read_Number_Plate", "Violation_Detected"]
+        headers = ["Tracking_ID", "Read_Number_Plate", "Violation_Detected", "Speed", "Timestamp"]
         csv_path = os.path.join(Config.OUTPUT_DIR, "rickshaws_unregistered_log.csv")
         with open(csv_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
@@ -70,7 +70,7 @@ def dump_db_to_csv():
         # 3. Export Large Vehicles
         cursor.execute("SELECT * FROM Large_Vehicles")
         rows = cursor.fetchall()
-        headers = ["Tracking_ID", "Read_Number_Plate", "Violation_Detected"]
+        headers = ["Tracking_ID", "Read_Number_Plate", "Violation_Detected", "Speed", "Timestamp"]
         csv_path = os.path.join(Config.OUTPUT_DIR, "heavy_vehicle_velocities.csv")
         with open(csv_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
@@ -173,13 +173,13 @@ async def api_get_ledger(category: str = Query("Motorcycle", pattern="^(Motorcyc
                     "id": f"motorcycle-{r['Tracking_ID']}",
                     "trackId": int(r['Tracking_ID']),
                     "className": "Motorcycle",
-                    "timestamp": "2026-06-02 16:10:15", # simulated base time
+                    "timestamp": r['Timestamp'] if r['Timestamp'] else "2026-06-02 16:10:15",
                     "rawImage": f"/static/Motorcycles/{r['Tracking_ID']}.jpg",
                     "enhancedImage": f"/static/Restored_Dashboards/Restored_{r['Tracking_ID']}.jpg",
                     "plateNumber": r['Read_Number_Plate'] or "Missing/Obstructed",
-                    "ocrMethod": "Local OCR (PaddleOCR v4)" if r['Read_Number_Plate'] else "Cloud API Fallback (Gemini)",
-                    "confidence": 94.5 if r['Read_Number_Plate'] else 98.2,
-                    "speed": 78.4 if r['Violation_Detected'] else 42.1,
+                    "ocrMethod": "Local OCR (PaddleOCR v4)" if r['Read_Number_Plate'] and r['Read_Number_Plate'] != "Missing/Obstructed" else "Cloud API Fallback (Gemini)",
+                    "confidence": 94.5 if r['Read_Number_Plate'] and r['Read_Number_Plate'] != "Missing/Obstructed" else 98.2,
+                    "speed": r['Speed'] if r['Speed'] is not None else 78.4,
                     "violationType": "Speed Limit & Helmet Detection Alert" if r['Violation_Detected'] else None
                 })
         elif category == "Auto-rickshaw":
@@ -189,13 +189,13 @@ async def api_get_ledger(category: str = Query("Motorcycle", pattern="^(Motorcyc
                     "id": f"rickshaw-{r['Tracking_ID']}",
                     "trackId": int(r['Tracking_ID']),
                     "className": "Auto-rickshaw",
-                    "timestamp": "2026-06-02 16:11:04",
+                    "timestamp": r['Timestamp'] if r['Timestamp'] else "2026-06-02 16:11:04",
                     "rawImage": f"/static/Auto_Rickshaws/{r['Tracking_ID']}.jpg",
                     "enhancedImage": f"/static/Auto_Rickshaws/{r['Tracking_ID']}.jpg",
                     "plateNumber": r['Read_Number_Plate'] or "Missing/Obstructed",
                     "ocrMethod": "Local OCR (PaddleOCR v4)",
                     "confidence": 91.2,
-                    "speed": 49.8,
+                    "speed": r['Speed'] if r['Speed'] is not None else 49.8,
                     "violationType": "Emissions/Permit Alert" if r['Violation_Detected'] else None
                 })
         else: # Large Vehicles
@@ -205,13 +205,13 @@ async def api_get_ledger(category: str = Query("Motorcycle", pattern="^(Motorcyc
                     "id": f"large-{r['Tracking_ID']}",
                     "trackId": int(r['Tracking_ID']),
                     "className": "Bus",
-                    "timestamp": "2026-06-02 16:12:59",
+                    "timestamp": r['Timestamp'] if r['Timestamp'] else "2026-06-02 16:12:59",
                     "rawImage": f"/static/Large_Vehicles/{r['Tracking_ID']}.jpg",
                     "enhancedImage": f"/static/Large_Vehicles/{r['Tracking_ID']}.jpg",
                     "plateNumber": r['Read_Number_Plate'] or "Missing/Obstructed",
                     "ocrMethod": "Local OCR (PaddleOCR v4)",
                     "confidence": 94.5,
-                    "speed": 42.1,
+                    "speed": r['Speed'] if r['Speed'] is not None else 42.1,
                     "violationType": "Speed Limit Infraction" if r['Violation_Detected'] else None
                 })
     except Exception as e:
