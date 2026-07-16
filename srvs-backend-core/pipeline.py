@@ -13,6 +13,9 @@ from subtasks.api_fallbacks.extract_numberplates import NumberplateExtractorAPI
 from subtasks.api_fallbacks.enhanced_image_generation import RealESRGANAPI
 from utils.event_manager import event_manager
 
+# Global API limit cooldown lock (prevents exceeding 15 Requests Per Minute)
+api_cooldown_lock = asyncio.Lock()
+
 # Dummy placeholders for TransReID and DeepOCSORT tracking logic.
 class TransReIDModule:
     """
@@ -111,7 +114,9 @@ class StreamA_Processor(BaseStreamProcessor):
                 plate_text = None
 
         if not plate_text:
-            plate_text = await self.plate_api.extract_plate(crop)
+            async with api_cooldown_lock:
+                plate_text = await self.plate_api.extract_plate(crop)
+                await asyncio.sleep(4.2)
 
         if not plate_text:
             plate_text = "Missing/Obstructed"
@@ -161,7 +166,9 @@ class StreamB_Processor(BaseStreamProcessor):
                 plate_text = None
 
         if not plate_text:
-            plate_text = await self.plate_api.extract_plate(crop)
+            async with api_cooldown_lock:
+                plate_text = await self.plate_api.extract_plate(crop)
+                await asyncio.sleep(4.2)
 
         if not plate_text:
             plate_text = "Missing/Obstructed"
@@ -170,7 +177,9 @@ class StreamB_Processor(BaseStreamProcessor):
         clean_id = re.sub(r"\D", "", track_id)
 
         if class_name == "Motorcycle":
-            helmet_detected = await self.helmet_api.extract_helmet(crop)
+            async with api_cooldown_lock:
+                helmet_detected = await self.helmet_api.extract_helmet(crop)
+                await asyncio.sleep(4.2)
             if not helmet_detected:
                 violation = True
 
