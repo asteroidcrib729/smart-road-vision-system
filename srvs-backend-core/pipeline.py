@@ -373,10 +373,26 @@ class VideoPipelineAsync:
 
     async def run_all(self):
         print("Starting Async Dual-Stream Pipeline...")
-        # Since we dynamically detect total frames inside process_stream,
-        # max_frames here acts only as a fallback if the video file cannot open
-        await asyncio.gather(
-            self.process_stream('A', max_frames=30),
-            self.process_stream('B', max_frames=30)
-        )
+        
+        # Check filename case-insensitively to isolate and process targeted cameras only
+        run_stream_a = True
+        run_stream_b = True
+        
+        if self.video_filename:
+            fn_lower = self.video_filename.lower()
+            if "front" in fn_lower:
+                print("[SYSTEM] Front-facing video detected. Running Stream A only (Cars, Trucks, Buses). Stream B ignored.")
+                run_stream_b = False
+            elif "rear" in fn_lower:
+                print("[SYSTEM] Rear-facing video detected. Running Stream B only (Motorcycles, Auto-rickshaws). Stream A ignored.")
+                run_stream_a = False
+
+        tasks = []
+        if run_stream_a:
+            tasks.append(self.process_stream('A', max_frames=30))
+        if run_stream_b:
+            tasks.append(self.process_stream('B', max_frames=30))
+
+        if tasks:
+            await asyncio.gather(*tasks)
         print("Pipeline Execution Completed.")
