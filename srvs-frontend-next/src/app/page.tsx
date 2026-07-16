@@ -131,6 +131,12 @@ export default function Home() {
           const payload = JSON.parse(event.data);
           if (payload.type === 'log') {
             setActiveLogs(prev => [...prev, payload.data]);
+            // Close progress and finalize state when pipeline signals completion log
+            if (payload.data.message.includes("Engine run succeeded")) {
+              setProcessProgress(100);
+              setIsProcessing(false);
+              refreshBackendData();
+            }
           } else if (payload.type === 'telemetry') {
             setTelemetry(prev => ({
               ...prev,
@@ -317,6 +323,13 @@ export default function Home() {
     setDownloadError(null);
   };
 
+  const getVideoUrl = (feed: string) => {
+    if (feed.endsWith('.mp4') && feed.length > 25) {
+      return `${API_URL}/videos/${feed}`;
+    }
+    return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+  };
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-mono select-none antialiased selection:bg-emerald-500 selection:text-black">
       
@@ -354,7 +367,7 @@ export default function Home() {
               <div className="lg:col-span-2 flex">
                 <VideoAnalyticsStation 
                   telemetryData={telemetry}
-                  videoUrl="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
+                  videoUrl={getVideoUrl(activeMediaFeed)}
                   streamLabel="ZONE 1: STREAM PANEL CONTAINER"
                   nativeWidth={2560}
                   nativeHeight={1440}

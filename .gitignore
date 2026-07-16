@@ -47,3 +47,7 @@ build/
 
 # Documentation Directory
 Additions/**
+
+# This Directory Stores Files And Sub-Directories Which Are Not
+# Supposed To Be Commited And Pushed To The Online Git Repository.
+Ignore-During-Commits/**
