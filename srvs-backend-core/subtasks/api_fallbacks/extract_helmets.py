@@ -16,7 +16,7 @@ class HelmetExtractorAPI:
             print("WARNING: GEMINI_API_KEY not set. Helmet API fallback will return UNKNOWN.")
         else:
             self.client = genai.Client(api_key=self.api_key)
-        self.model_id = 'gemma-4-31b-it'
+        self.model_id = 'gemini-1.5-flash'
         self.prompt = "Analyze this image of a bike rider. Does the rider appear to be wearing a helmet? Provide only a concise 'YES' or 'NO' answer. If unsure or if the rider is not visible, return 'UNKNOWN'."
 
     async def extract_helmet(self, image_np):

@@ -29,6 +29,7 @@ app.add_middleware(
 # Ensure output directory exists and mount it as a static folder to serve images
 os.makedirs(Config.OUTPUT_DIR, exist_ok=True)
 app.mount("/static", StaticFiles(directory=Config.OUTPUT_DIR), name="static")
+app.mount("/videos", StaticFiles(directory=os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "videos")), name="videos")
 
 # Pipeline running tracking state
 pipeline_running = False
@@ -81,11 +82,11 @@ def dump_db_to_csv():
     except Exception as e:
         print(f"[ERROR] Failed to export DB to CSV: {str(e)}")
 
-async def run_pipeline_wrapper():
+async def run_pipeline_wrapper(video_filename: str):
     global pipeline_running, pipeline_task
     try:
         pipeline_running = True
-        pipeline = VideoPipelineAsync()
+        pipeline = VideoPipelineAsync(video_filename)
         event_manager.publish("log", {"time": "16:14:10", "message": "Starting Asynchronous Dual-Stream Video Pipeline...", "type": "info"})
         
         await pipeline.run_all()
@@ -119,7 +120,7 @@ async def api_start_stream(payload: StartPayload, background_tasks: BackgroundTa
         return {"status": "already_running", "message": "An active pipeline session is already processing."}
     
     # Run the wrapper asynchronously in background
-    pipeline_task = asyncio.create_task(run_pipeline_wrapper())
+    pipeline_task = asyncio.create_task(run_pipeline_wrapper(payload.stream_feed))
     return {"status": "processing_started", "message": "Pipeline core started successfully."}
 
 @app.post("/api/stream/stop")

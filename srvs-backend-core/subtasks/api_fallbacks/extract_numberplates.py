@@ -16,7 +16,7 @@ class NumberplateExtractorAPI:
             print("WARNING: GEMINI_API_KEY not set. Numberplate API fallback will return None.")
         else:
             self.client = genai.Client(api_key=self.api_key)
-        self.model_id = 'gemma-4-31b-it'
+        self.model_id = 'gemini-1.5-flash'
         self.prompt = "Read the numberplate of the vehicle in this image. Provide only the text of the numberplate. If no valid numberplate is found, return 'UNKNOWN'."
 
     async def extract_plate(self, image_np):

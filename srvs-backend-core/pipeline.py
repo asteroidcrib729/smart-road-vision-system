@@ -211,7 +211,8 @@ class StreamB_Processor(BaseStreamProcessor):
 
 
 class VideoPipelineAsync:
-    def __init__(self):
+    def __init__(self, video_filename: str = None):
+        self.video_filename = video_filename
         self.stream_a = StreamA_Processor()
         self.stream_b = StreamB_Processor()
 
@@ -232,10 +233,30 @@ class VideoPipelineAsync:
         processor = self.stream_a if stream_type == 'A' else self.stream_b
         tracker = self.tracker_a if stream_type == 'A' else self.tracker_b
 
-        frame = np.zeros((720, 1280, 3), dtype=np.uint8) # Dummy frame
+        video_path = None
+        if self.video_filename:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            video_path = os.path.join(base_dir, "data", "videos", self.video_filename)
 
-        for frame_count in range(max_frames):
-            detections = self.dummy_detect(frame_count, stream_type)
+        cap = None
+        if video_path and os.path.exists(video_path):
+            cap = cv2.VideoCapture(video_path)
+            print(f"[SYSTEM] Pipeline opened real video: {video_path}")
+        else:
+            print("[SYSTEM] Video file not found. Falling back to dummy frames.")
+
+        try:
+            for frame_count in range(max_frames):
+                frame = None
+                if cap and cap.isOpened():
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+
+                if frame is None:
+                    frame = np.zeros((720, 1280, 3), dtype=np.uint8) # Dummy frame
+
+                detections = self.dummy_detect(frame_count, stream_type)
 
             # Filter classes based on stream logic
             filtered_dets = [d for d in detections if d['class'] in processor.target_classes]
@@ -283,6 +304,9 @@ class VideoPipelineAsync:
                 })
 
             await asyncio.sleep(0.1) # Yield loop for SSE stream performance
+        finally:
+            if cap:
+                cap.release()
 
     async def run_all(self):
         print("Starting Async Dual-Stream Pipeline...")
