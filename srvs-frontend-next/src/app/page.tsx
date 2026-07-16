@@ -76,7 +76,7 @@ export default function Home() {
       const [motoRes, rickRes, largeRes] = await Promise.all([
         fetch(`${API_URL}/api/ledger?category=Motorcycle`),
         fetch(`${API_URL}/api/ledger?category=Auto-rickshaw`),
-        fetch(`${API_URL}/api/ledger?category=Large%2520Vehicles`)
+        fetch(`${API_URL}/api/ledger?category=Large%20Vehicles`)
       ]);
 
       if (motoRes.ok && rickRes.ok && largeRes.ok) {
