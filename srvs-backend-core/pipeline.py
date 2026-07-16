@@ -228,8 +228,12 @@ class VideoPipelineAsync:
         self.stream_a = StreamA_Processor()
         self.stream_b = StreamB_Processor()
 
-        # Load real YOLOv8 model for real-time video detection
-        self.model = YOLO("yolov8s.pt")
+        # Load the precise Open Images V7 YOLOv8 model specified in Config
+        model_path = os.path.join(Config.BASE_DIR, "data", "weights", Config.YOLO_MODEL_PATH)
+        if not os.path.exists(model_path):
+            # Fallback to local root or auto-download if the weights folder is empty
+            model_path = Config.YOLO_MODEL_PATH
+        self.model = YOLO(model_path)
 
         self.reid = TransReIDModule()
         self.tracker_a = DeepOCSORTModule()
@@ -273,15 +277,18 @@ class VideoPipelineAsync:
                         conf = float(box.conf[0])
                         if conf > Config.DETECTION_CONF_THRESH:
                             bbox = [int(x) for x in box.xyxy[0].tolist()]
-                            # Map standard COCO class IDs (2: car, 3: motorcycle, 5: bus, 7: truck)
-                            if cls_id == 3:
+                            # Map standard COCO / Open Images V7 class names case-insensitively
+                            raw_name = results.names[cls_id].lower()
+                            if raw_name == "motorcycle":
                                 detections.append({'bbox': bbox, 'class': 'Motorcycle'})
-                            elif cls_id == 2:
+                            elif raw_name in ["car", "automobile"]:
                                 detections.append({'bbox': bbox, 'class': 'Car'})
-                            elif cls_id == 5:
+                            elif raw_name == "bus":
                                 detections.append({'bbox': bbox, 'class': 'Bus'})
-                            elif cls_id == 7:
+                            elif raw_name == "truck":
                                 detections.append({'bbox': bbox, 'class': 'Truck'})
+                            elif raw_name in ["auto-rickshaw", "rickshaw"]:
+                                detections.append({'bbox': bbox, 'class': 'Auto-rickshaw'})
                 else:
                     # Fallback to simulated detections if video file is missing
                     if stream_type == 'A' and frame_count % 5 == 0:
