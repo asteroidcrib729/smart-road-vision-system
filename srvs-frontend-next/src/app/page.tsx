@@ -33,6 +33,7 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [processProgress, setProcessProgress] = useState<number>(0);
   const [activeLogs, setActiveLogs] = useState<LogEntry[]>(INITIAL_LOGS);
+  const [totalStreamFrames, setTotalStreamFrames] = useState<number>(30);
   const [telemetry, setTelemetry] = useState<TelemetryMap>(MOCK_TELEMETRY);
   const [snapshots, setSnapshots] = useState<EnhancedSnapshot[]>(SNAPSHOTS_DATABASE);
   const [csvFiles, setCsvFiles] = useState<CSVFile[]>(MOCK_CSV_DATABASE);
@@ -137,15 +138,20 @@ export default function Home() {
               setIsProcessing(false);
               refreshBackendData();
             }
+          } else if (payload.type === 'metadata') {
+            setTotalStreamFrames(payload.data.total_frames || 30);
           } else if (payload.type === 'telemetry') {
             setTelemetry(prev => ({
               ...prev,
               [payload.data.frame]: payload.data.tracks
             }));
             
-            // Sync progress bar: estimate based on frame counts (max 30 frames in dummy)
-            const progress = (payload.data.frame / 30) * 100;
-            setProcessProgress(Math.min(progress, 100));
+            // Sync progress bar dynamically based on the total frames in the stream
+            setTotalStreamFrames(prevTotal => {
+              const progress = (payload.data.frame / prevTotal) * 100;
+              setProcessProgress(Math.min(progress, 100));
+              return prevTotal;
+            });
           }
         } catch (err) {
           console.error("Failed to parse SSE payload:", err);

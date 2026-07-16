@@ -194,7 +194,7 @@ export default function VideoAnalyticsStation({
           <h3 className="text-xs font-black tracking-widest text-zinc-300 uppercase">{streamLabel}</h3>
         </div>
         <div className="text-[10px] text-zinc-500 bg-zinc-950 px-2.5 py-1 rounded border border-zinc-850 font-mono">
-          Sync Frame Index: <span className="text-yellow-500 font-semibold">{playbackState.computedFrame}</span> / 600
+          Sync Frame Index: <span className="text-yellow-500 font-semibold">{playbackState.computedFrame}</span> / {Math.floor(playbackState.totalDuration * fps) || 600}
         </div>
       </div>
 
