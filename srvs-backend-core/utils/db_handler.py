@@ -13,71 +13,75 @@ class DatabaseHandler:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        # Schema A: Motorcycles
+        # Re-create tables with Speed and Timestamp columns to support dynamic reporting
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Motorcycles (
                 Tracking_ID TEXT PRIMARY KEY,
                 Read_Number_Plate TEXT,
                 Helmet_Detected BOOLEAN,
-                Violation_Detected BOOLEAN
+                Violation_Detected BOOLEAN,
+                Speed REAL,
+                Timestamp TEXT
             )
         ''')
 
-        # Schema B: Auto-Rickshaws
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Auto_Rickshaws (
                 Tracking_ID TEXT PRIMARY KEY,
                 Read_Number_Plate TEXT,
-                Violation_Detected BOOLEAN
+                Violation_Detected BOOLEAN,
+                Speed REAL,
+                Timestamp TEXT
             )
         ''')
 
-        # Schema C: Large Vehicles
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Large_Vehicles (
                 Tracking_ID TEXT PRIMARY KEY,
                 Read_Number_Plate TEXT,
-                Violation_Detected BOOLEAN
+                Violation_Detected BOOLEAN,
+                Speed REAL,
+                Timestamp TEXT
             )
         ''')
 
         conn.commit()
         conn.close()
 
-    async def log_motorcycle(self, track_id, plate, helmet, violation):
+    async def log_motorcycle(self, track_id, plate, helmet, violation, speed, timestamp):
         def sync_log():
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR REPLACE INTO Motorcycles (Tracking_ID, Read_Number_Plate, Helmet_Detected, Violation_Detected)
-                VALUES (?, ?, ?, ?)
-            ''', (track_id, plate, helmet, violation))
+                INSERT OR REPLACE INTO Motorcycles (Tracking_ID, Read_Number_Plate, Helmet_Detected, Violation_Detected, Speed, Timestamp)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (track_id, plate, helmet, violation, speed, timestamp))
             conn.commit()
             conn.close()
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, sync_log)
 
-    async def log_auto_rickshaw(self, track_id, plate, violation):
+    async def log_auto_rickshaw(self, track_id, plate, violation, speed, timestamp):
         def sync_log():
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR REPLACE INTO Auto_Rickshaws (Tracking_ID, Read_Number_Plate, Violation_Detected)
-                VALUES (?, ?, ?)
-            ''', (track_id, plate, violation))
+                INSERT OR REPLACE INTO Auto_Rickshaws (Tracking_ID, Read_Number_Plate, Violation_Detected, Speed, Timestamp)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (track_id, plate, violation, speed, timestamp))
             conn.commit()
             conn.close()
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, sync_log)
 
-    async def log_large_vehicle(self, track_id, plate, violation):
+    async def log_large_vehicle(self, track_id, plate, violation, speed, timestamp):
         def sync_log():
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR REPLACE INTO Large_Vehicles (Tracking_ID, Read_Number_Plate, Violation_Detected)
-                VALUES (?, ?, ?)
-            ''', (track_id, plate, violation))
+                INSERT OR REPLACE INTO Large_Vehicles (Tracking_ID, Read_Number_Plate, Violation_Detected, Speed, Timestamp)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (track_id, plate, violation, speed, timestamp))
             conn.commit()
             conn.close()
         loop = asyncio.get_event_loop()

@@ -25,14 +25,16 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'snapshots' | 'csv-explorer'>('dashboard');
 
   // Stream & Ingestion Engine States
-  const [activeMediaFeed, setActiveMediaFeed] = useState<string>('SRVS - Footage of Front Plates - New.mp4');
+  const [activeMediaFeed, setActiveMediaFeed] = useState<string>('SRVS - Footage of Front Number-Plates - New.mp4');
   const [mediaFeeds, setMediaFeeds] = useState<string[]>([
-    'SRVS - Footage of Front Plates - New.mp4',
-    'SRVS - Footage of Rear Plates - Alt.mp4'
+    'SRVS - Footage of Front Number-Plates - New.mp4',
+    'SRVS - Footage of Rear Number-Plates - New.mp4'
   ]);
+  const [ingestedFeeds, setIngestedFeeds] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [processProgress, setProcessProgress] = useState<number>(0);
   const [activeLogs, setActiveLogs] = useState<LogEntry[]>(INITIAL_LOGS);
+  const [totalStreamFrames, setTotalStreamFrames] = useState<number>(30);
   const [telemetry, setTelemetry] = useState<TelemetryMap>(MOCK_TELEMETRY);
   const [snapshots, setSnapshots] = useState<EnhancedSnapshot[]>(SNAPSHOTS_DATABASE);
   const [csvFiles, setCsvFiles] = useState<CSVFile[]>(MOCK_CSV_DATABASE);
@@ -105,6 +107,13 @@ export default function Home() {
           setCsvFiles(csvs);
         }
       }
+
+      // 3. Fetch list of downloaded video files from backend to resolve dynamic playback
+      const videosRes = await fetch(`${API_URL}/api/videos/list`);
+      if (videosRes.ok) {
+        const files: string[] = await videosRes.json();
+        setIngestedFeeds(files);
+      }
     } catch (err) {
       console.error("[ERROR] Failed to load data from backend:", err);
     }
@@ -137,15 +146,20 @@ export default function Home() {
               setIsProcessing(false);
               refreshBackendData();
             }
+          } else if (payload.type === 'metadata') {
+            setTotalStreamFrames(payload.data.total_frames || 30);
           } else if (payload.type === 'telemetry') {
             setTelemetry(prev => ({
               ...prev,
               [payload.data.frame]: payload.data.tracks
             }));
             
-            // Sync progress bar: estimate based on frame counts (max 30 frames in dummy)
-            const progress = (payload.data.frame / 30) * 100;
-            setProcessProgress(Math.min(progress, 100));
+            // Sync progress bar dynamically based on the total frames in the stream
+            setTotalStreamFrames(prevTotal => {
+              const progress = (payload.data.frame / prevTotal) * 100;
+              setProcessProgress(Math.min(progress, 100));
+              return prevTotal;
+            });
           }
         } catch (err) {
           console.error("Failed to parse SSE payload:", err);
@@ -238,25 +252,31 @@ export default function Home() {
           throw new Error(errData.detail || "Download failed on backend");
         }
         
-        // Append newly downloaded file to selectors
-        const newFeed = `${fileId}.mp4`;
-        setMediaFeeds(prev => [...prev, newFeed]);
+        const data = await res.json();
+        const newFeed = data.filename || `${fileId}.mp4`;
+        
+        setMediaFeeds(prev => prev.includes(newFeed) ? prev : [...prev, newFeed]);
+        setIngestedFeeds(prev => prev.includes(newFeed) ? prev : [...prev, newFeed]);
         setActiveMediaFeed(newFeed);
         
         setActiveLogs(prev => [
           ...prev,
-          { time: '16:14:15', message: `📥 [DOWNLOAD SUCCESS] File ${fileId}.mp4 downloaded locally and added to media feeds.`, type: 'info' }
+          { time: '16:14:15', message: `📥 [DOWNLOAD SUCCESS] File ${newFeed} downloaded locally and added to media feeds.`, type: 'info' }
         ]);
       } else {
         // Simulated offline success
         await new Promise(resolve => setTimeout(resolve, 2000));
-        const newFeed = `${fileId}.mp4`;
-        setMediaFeeds(prev => [...prev, newFeed]);
+        const newFeed = fileId === '1Sck0JM8ark4tevtQnDsKwkFkoc1SVxsE' 
+          ? 'SRVS - Footage of Front Number-Plates - New.mp4' 
+          : 'SRVS - Footage of Rear Number-Plates - New.mp4';
+        
+        setMediaFeeds(prev => prev.includes(newFeed) ? prev : [...prev, newFeed]);
+        setIngestedFeeds(prev => prev.includes(newFeed) ? prev : [...prev, newFeed]);
         setActiveMediaFeed(newFeed);
         
         setActiveLogs(prev => [
           ...prev,
-          { time: '16:14:15', message: `📥 [SIMULATED INGESTION] File ${fileId}.mp4 ingested successfully.`, type: 'info' }
+          { time: '16:14:15', message: `📥 [SIMULATED INGESTION] File ${newFeed} ingested successfully.`, type: 'info' }
         ]);
       }
     } catch (err: any) {
@@ -324,10 +344,7 @@ export default function Home() {
   };
 
   const getVideoUrl = (feed: string) => {
-    if (feed === 'SRVS - Footage of Front Plates - New.mp4' || feed === 'SRVS - Footage of Rear Plates - Alt.mp4') {
-      return "https://photo-sphere-viewer-data.netlify.app/assets/equirectangular-video/Ayutthaya_HD.mp4";
-    }
-    if (feed.endsWith('.mp4')) {
+    if (ingestedFeeds.includes(feed)) {
       return `${API_URL}/videos/${feed}`;
     }
     return "https://photo-sphere-viewer-data.netlify.app/assets/equirectangular-video/Ayutthaya_HD.mp4";
