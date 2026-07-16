@@ -173,17 +173,13 @@ class StreamA_Processor(BaseStreamProcessor):
         class_name = state.get('class_name', 'Car')
         speed = state.get('speed', 42.1)
         violation = state.get('violation', False)
+        
+        # Local OCR Only (PaddleOCR v4) - No API-based OCR fallback for front-facing vehicles
         plate_text = None
-
         if hasattr(self, 'ocr_engine') and self.ocr_engine:
             plate_text, conf = self.ocr_engine.read(crop)
             if not plate_text or conf < 0.5:
                 plate_text = None
-
-        if not plate_text:
-            async with api_cooldown_lock:
-                plate_text = await self.plate_api.extract_plate(crop)
-                await asyncio.sleep(4.2)
 
         if not plate_text:
             plate_text = "Missing/Obstructed"
@@ -230,25 +226,27 @@ class StreamB_Processor(BaseStreamProcessor):
         class_name = state['class_name']
         speed = state.get('speed', 78.4)
         violation = state.get('violation', False)
+        
+        # Local OCR (PaddleOCR v4)
         plate_text = None
-
         if hasattr(self, 'ocr_engine') and self.ocr_engine:
             plate_text, conf = self.ocr_engine.read(crop)
             if not plate_text or conf < 0.5:
                 plate_text = None
 
-        if not plate_text:
-            async with api_cooldown_lock:
-                plate_text = await self.plate_api.extract_plate(crop)
-                await asyncio.sleep(4.2)
-
-        if not plate_text:
-            plate_text = "Missing/Obstructed"
-
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         time_only = datetime.datetime.now().strftime("%H:%M:%S")
 
         if class_name == "Motorcycle":
+            # API-based fallback OCR and Super-Resolution Enhancement are for Motorcycles only
+            if not plate_text:
+                async with api_cooldown_lock:
+                    plate_text = await self.plate_api.extract_plate(crop)
+                    await asyncio.sleep(4.2)
+
+            if not plate_text:
+                plate_text = "Missing/Obstructed"
+
             helmet_detected = False
             async with api_cooldown_lock:
                 helmet_detected = await self.helmet_api.extract_helmet(crop)
@@ -276,6 +274,10 @@ class StreamB_Processor(BaseStreamProcessor):
             print(f"[Stream B] Processed {track_id} (Motorcycle): Plate={plate_text}, Helmet={helmet_detected}, Violation={violation}")
 
         elif class_name == "Auto-rickshaw":
+            # Auto-rickshaws utilize local OCR only and do not use API OCR or Real-ESRGAN
+            if not plate_text:
+                plate_text = "Missing/Obstructed"
+
             save_path = os.path.join(Config.OUTPUT_AUTORICKSHAWS, f"{clean_id}.jpg")
             cv2.imwrite(save_path, crop)
             await self.db.log_auto_rickshaw(clean_id, plate_text, violation, speed, now_str)
