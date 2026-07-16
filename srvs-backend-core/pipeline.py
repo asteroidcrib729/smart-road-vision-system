@@ -66,6 +66,7 @@ class BaseStreamProcessor:
 
         # Track State Buffer: store best crop heuristics and info
         self.track_states = {}
+        self.processed_tracks = set() # Track already finalized IDs to prevent duplicate API requests
 
         # Ensure directories exist
         os.makedirs(Config.OUTPUT_LARGE_VEHICLES, exist_ok=True)
@@ -102,10 +103,15 @@ class StreamA_Processor(BaseStreamProcessor):
         super().__init__("Stream A", Config.STREAM_A_CLASSES)
 
     async def finalize_track(self, track_id):
+        clean_id = re.sub(r"\D", "", track_id)
+        if clean_id in self.processed_tracks:
+            return
+
         state = self.track_states.get(track_id)
         if not state or state['best_crop'] is None:
             return
 
+        self.processed_tracks.add(clean_id)
         crop = state['best_crop']
         speed = state.get('speed', 42.1)
         violation = state.get('violation', False)
@@ -153,10 +159,15 @@ class StreamB_Processor(BaseStreamProcessor):
         self.enhancement_api = RealESRGANAPI()
 
     async def finalize_track(self, track_id):
+        clean_id = re.sub(r"\D", "", track_id)
+        if clean_id in self.processed_tracks:
+            return
+
         state = self.track_states.get(track_id)
         if not state or state['best_crop'] is None:
             return
 
+        self.processed_tracks.add(clean_id)
         crop = state['best_crop']
         class_name = state['class_name']
         speed = state.get('speed', 78.4)
@@ -256,8 +267,16 @@ class VideoPipelineAsync:
         else:
             print("[SYSTEM] Video file not found. Falling back to dummy frames.")
 
+        # Dynamically determine the total frames to process the video to full length
+        total_frames = max_frames
+        if cap and cap.isOpened():
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            # Just publish the total frame count metadata event once on Stream A
+            if stream_type == 'A':
+                event_manager.publish("metadata", {"total_frames": total_frames})
+
         try:
-            for frame_count in range(max_frames):
+            for frame_count in range(total_frames):
                 frame = None
                 if cap and cap.isOpened():
                     ret, frame = cap.read()
@@ -354,6 +373,8 @@ class VideoPipelineAsync:
 
     async def run_all(self):
         print("Starting Async Dual-Stream Pipeline...")
+        # Since we dynamically detect total frames inside process_stream,
+        # max_frames here acts only as a fallback if the video file cannot open
         await asyncio.gather(
             self.process_stream('A', max_frames=30),
             self.process_stream('B', max_frames=30)
