@@ -260,6 +260,7 @@ class VideoPipelineAsync:
                 if cap and cap.isOpened():
                     ret, frame = cap.read()
                     if not ret:
+                        print(f"[SYSTEM] [{stream_type}] Video read failed at frame {frame_count}. cap.isOpened={cap.isOpened()}")
                         break
 
                 if frame is None:
