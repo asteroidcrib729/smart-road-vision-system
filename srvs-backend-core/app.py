@@ -108,7 +108,8 @@ async def api_download_video(payload: DownloadPayload):
     """Securely download a video from Google Drive at runtime."""
     try:
         path = download_drive_file(payload.file_id)
-        return {"status": "success", "file_path": path, "file_id": payload.file_id}
+        filename = os.path.basename(path)
+        return {"status": "success", "file_path": path, "file_id": payload.file_id, "filename": filename}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
