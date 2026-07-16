@@ -107,6 +107,13 @@ export default function Home() {
           setCsvFiles(csvs);
         }
       }
+
+      // 3. Fetch list of downloaded video files from backend to resolve dynamic playback
+      const videosRes = await fetch(`${API_URL}/api/videos/list`);
+      if (videosRes.ok) {
+        const files: string[] = await videosRes.json();
+        setIngestedFeeds(files);
+      }
     } catch (err) {
       console.error("[ERROR] Failed to load data from backend:", err);
     }

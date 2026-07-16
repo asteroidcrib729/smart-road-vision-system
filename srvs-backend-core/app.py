@@ -113,6 +113,18 @@ async def api_download_video(payload: DownloadPayload):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/videos/list")
+async def api_list_videos():
+    """List all video files downloaded and present in the local directory."""
+    videos_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "videos")
+    if not os.path.exists(videos_dir):
+        return []
+    try:
+        files = [f for f in os.listdir(videos_dir) if f.endswith(".mp4")]
+        return files
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/stream/start")
 async def api_start_stream(payload: StartPayload, background_tasks: BackgroundTasks):
     """Start running the core video pipeline in the background."""
