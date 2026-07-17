@@ -11,6 +11,7 @@ export interface VideoAnalyticsStationProps {
   nativeWidth?: number;  // Matching your 1440p horizontal resolution: 2560
   nativeHeight?: number; // Matching your 1440p vertical resolution: 1440
   fps?: number;          // Processing cadence loop configuration: 60
+  isProcessing?: boolean; // Disable controls during core engine runs
 }
 
 export default function VideoAnalyticsStation({
@@ -19,7 +20,8 @@ export default function VideoAnalyticsStation({
   streamLabel = "ZONE 1: STREAM PANEL CONTAINER",
   nativeWidth = 2560,
   nativeHeight = 1440,
-  fps = 60
+  fps = 60,
+  isProcessing = false
 }: VideoAnalyticsStationProps): React.JSX.Element {
   
   // 1. Hardware & Virtual Canvas DOM Reference Points
@@ -255,23 +257,25 @@ export default function VideoAnalyticsStation({
       {/* MANUAL TIMELINE CONTROLLER LAYER WITH FAST-FORWARD & FULLSCREEN */}
       <div className="flex flex-col sm:flex-row items-center gap-4 bg-zinc-950 p-3 rounded-lg border border-zinc-850">
         
-        {/* Play/Pause Button - Removed text helper */}
+        {/* Play/Pause Button - Disabled during active engine processing */}
         <button 
           onClick={() => videoRef.current && (playbackState.isPlaying ? videoRef.current.pause() : videoRef.current.play())}
-          className="p-2 rounded-full transition-all bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 active:scale-95 flex items-center justify-center cursor-pointer"
-          title={playbackState.isPlaying ? 'Pause' : 'Play'}
+          disabled={isProcessing}
+          className="p-2 rounded-full transition-all bg-zinc-900 hover:bg-zinc-800 disabled:bg-zinc-950 disabled:text-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed border border-zinc-800 text-zinc-200 active:scale-95 flex items-center justify-center cursor-pointer"
+          title={isProcessing ? 'Locked during engine processing' : (playbackState.isPlaying ? 'Pause' : 'Play')}
         >
           {playbackState.isPlaying ? <Pause className="w-4 h-4 text-yellow-500" /> : <Play className="w-4 h-4 text-emerald-500" />}
         </button>
 
-        {/* Speed Controls: 1x, 2x, 4x */}
-        <div className="flex bg-zinc-900 border border-zinc-800 p-0.5 rounded text-[10px] font-bold">
+        {/* Speed Controls: 1x, 2x, 4x - Disabled during processing */}
+        <div className={`flex bg-zinc-900 border border-zinc-800 p-0.5 rounded text-[10px] font-bold ${isProcessing ? 'opacity-40' : ''}`}>
           {([1, 2, 4] as const).map((rate) => (
             <button
               key={rate}
               onClick={() => handleSpeedChange(rate)}
-              className={`px-2 py-1 rounded transition-colors cursor-pointer ${
-                playbackRate === rate ? 'bg-emerald-500 text-black' : 'text-zinc-400 hover:text-zinc-200'
+              disabled={isProcessing}
+              className={`px-2 py-1 rounded transition-colors disabled:cursor-not-allowed ${
+                playbackRate === rate && !isProcessing ? 'bg-emerald-500 text-black font-bold' : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
               {rate}x
@@ -279,7 +283,7 @@ export default function VideoAnalyticsStation({
           ))}
         </div>
         
-        {/* Clickable and Scrubbable Timeline Slider */}
+        {/* Clickable and Scrubbable Timeline Slider - Disabled during processing */}
         <div className="flex-grow w-full text-xs text-zinc-400 flex items-center justify-between gap-3">
           <span className="font-mono text-zinc-550 shrink-0">{playbackState.currentTime.toFixed(2)}s</span>
           <input 
@@ -288,6 +292,7 @@ export default function VideoAnalyticsStation({
             max={playbackState.totalDuration || 10}
             step={0.05}
             value={playbackState.currentTime}
+            disabled={isProcessing}
             onChange={(e) => {
               const targetTime = parseFloat(e.target.value);
               if (videoRef.current) {
@@ -295,12 +300,12 @@ export default function VideoAnalyticsStation({
               }
               setPlaybackState(prev => ({ ...prev, currentTime: targetTime }));
             }}
-            className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-emerald-500 focus:outline-none"
+            className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-emerald-500 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed"
           />
           <span className="font-mono text-zinc-550 shrink-0">{(playbackState.totalDuration || 10).toFixed(2)}s</span>
         </div>
 
-        {/* Fullscreen Button */}
+        {/* Fullscreen Button - Kept interactive so user can inspect fullscreen processing streams */}
         <button
           onClick={handleFullscreenToggle}
           className="p-2 rounded transition-all bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 active:scale-95 flex items-center justify-center cursor-pointer"

@@ -387,6 +387,7 @@ export default function Home() {
                   nativeWidth={2560}
                   nativeHeight={1440}
                   fps={60}
+                  isProcessing={isProcessing}
                 />
               </div>
 
