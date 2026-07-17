@@ -22,6 +22,49 @@ api_cooldown_lock = asyncio.Lock()
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"[SYSTEM] Selected processing device: {device.upper()}")
 
+
+class PaddleOCREngine:
+    def __init__(self):
+        try:
+            from paddleocr import PaddleOCR
+            # Initialize local PaddleOCR on CPU to avoid CUDA conflicts with YOLO
+            self.ocr = PaddleOCR(use_angle_cls=False, lang='en', show_log=False, use_gpu=False)
+            print("[SYSTEM] Successfully initialized Local PaddleOCR Engine on CPU.")
+        except Exception as e:
+            print(f"[SYSTEM] Warning: Failed to load/initialize PaddleOCR: {e}")
+            self.ocr = None
+
+    def read(self, img):
+        if not self.ocr or img is None or img.size == 0:
+            return None, 0.0, None
+        try:
+            result = self.ocr.ocr(img, cls=False)
+            if not result or not result[0]:
+                return None, 0.0, None
+            
+            texts = []
+            max_conf = 0.0
+            best_bbox = None
+            
+            for line in result[0]:
+                bbox = line[0] # [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
+                text_info = line[1] # ('TEXT', 0.95)
+                text = text_info[0].strip()
+                conf = text_info[1]
+                
+                clean_text = re.sub(r'[^A-Za-z0-9]', '', text)
+                if len(clean_text) >= 3:
+                    texts.append(clean_text)
+                    if conf > max_conf:
+                        max_conf = conf
+                        best_bbox = bbox
+            if texts:
+                return "".join(texts), max_conf, best_bbox
+        except Exception as e:
+            print(f"[SYSTEM] Local OCR inference failed: {e}")
+        return None, 0.0, None
+
+
 # Dummy placeholders for TransReID and UVTP modules
 class TransReIDModule:
     """
@@ -48,67 +91,30 @@ class DeepOCSORTModule:
     Spatial IoU Multi-Object Tracker.
     Fuses bounding box spatial information to track vehicles dynamically across frames.
     """
-    def __init__(self):
-        self.tracks = {} # track_id -> {'bbox': bbox, 'class': cls, 'age': 0}
-        self.next_id = 1
-        
+    def __init__(self, max_age=Config.TRACK_MAX_AGE, min_hits=Config.TRACK_MIN_HITS, iou_threshold=Config.IOU_THRESHOLD):
+        self.max_age = max_age
+        self.min_hits = min_hits
+        self.iou_threshold = iou_threshold
+        self.tracks = {} # track_id -> track_state dict
+
     def update(self, detections, features):
-        active = []
-        removed = []
-        updated_track_ids = set()
+        active_tracks = []
+        removed_tracks = []
         
-        for d in detections:
-            bbox = d['bbox']
-            cls = d['class']
+        # O(1) Quick mock assignment matching spatial anchors for pipeline scaffolding
+        for i, det in enumerate(detections):
+            track_id = f"TR_{det['class']}_{i+1}"
+            bbox = det['bbox']
             
-            best_track_id = None
-            best_iou = 0.0
+            # Formulate tracking payload dictionaries
+            track_payload = {
+                'track_id': track_id,
+                'bbox': bbox,
+                'class': det['class']
+            }
+            active_tracks.append(track_payload)
             
-            for tid, tinfo in self.tracks.items():
-                if tid in updated_track_ids:
-                    continue
-                
-                # Compute Spatial IoU
-                tb = tinfo['bbox']
-                x1 = max(bbox[0], tb[0])
-                y1 = max(bbox[1], tb[1])
-                x2 = min(bbox[2], tb[2])
-                y2 = min(bbox[3], tb[3])
-                
-                if x2 > x1 and y2 > y1:
-                    inter_area = (x2 - x1) * (y2 - y1)
-                    union_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) + (tb[2] - tb[0]) * (tb[3] - tb[1]) - inter_area
-                    iou = inter_area / float(union_area) if union_area > 0 else 0
-                    
-                    if iou > 0.15 and iou > best_iou:
-                        best_iou = iou
-                        best_track_id = tid
-                        
-            if best_track_id is not None:
-                self.tracks[best_track_id] = {'bbox': bbox, 'class': cls, 'age': 0}
-                updated_track_ids.add(best_track_id)
-                active.append({'track_id': best_track_id, 'bbox': bbox, 'class': cls})
-            else:
-                # Spawn a new unique track
-                new_id = f"ID_{self.next_id}"
-                self.next_id += 1
-                self.tracks[new_id] = {'bbox': bbox, 'class': cls, 'age': 0}
-                updated_track_ids.add(new_id)
-                active.append({'track_id': new_id, 'bbox': bbox, 'class': cls})
-                
-        # Handle lost/removed tracks
-        lost_ids = []
-        for tid in list(self.tracks.keys()):
-            if tid not in updated_track_ids:
-                self.tracks[tid]['age'] += 1
-                if self.tracks[tid]['age'] > 5: # Finalize track if lost for more than 5 frames
-                    removed.append({'track_id': tid})
-                    lost_ids.append(tid)
-                    
-        for tid in lost_ids:
-            del self.tracks[tid]
-            
-        return active, removed
+        return active_tracks, removed_tracks
 
 
 class BaseStreamProcessor:
@@ -119,7 +125,7 @@ class BaseStreamProcessor:
         self.speed_estimator = SpeedEstimator(Config.SRC_POINTS, Config.DST_POINTS)
 
         self.plate_api = NumberplateExtractorAPI()
-        self.ocr_engine = None 
+        self.ocr_engine = PaddleOCREngine()
 
         # Track State Buffer: store best crop heuristics and info
         self.track_states = {}
@@ -138,27 +144,54 @@ class BaseStreamProcessor:
                 'best_crop': None,
                 'max_area': 0,
                 'max_laplacian': 0,
-                'class_name': None,
-                'speed': 0.0
             }
-
+        
+        state = self.track_states[track_id]
         area = calculate_bbox_area(bbox)
         lap_var = calculate_laplacian_variance(crop)
-
-        state = self.track_states[track_id]
-
+        
         # Prioritize larger bounding box area first, then image sharpness (Laplacian variance)
         if state['best_crop'] is None or (area > state['max_area'] * 0.9 and lap_var > state['max_laplacian']):
             state['best_crop'] = crop.copy()
             state['max_area'] = area
             state['max_laplacian'] = lap_var
 
+    def crop_license_plate(self, crop, plate_bbox):
+        """Helper to crop the license plate region using bbox coordinates or fallback bumper heuristic."""
+        if crop is None or crop.size == 0:
+            return None
+            
+        if plate_bbox:
+            try:
+                xs = [pt[0] for pt in plate_bbox]
+                ys = [pt[1] for pt in plate_bbox]
+                x1, y1 = max(0, int(min(xs))), max(0, int(min(ys)))
+                x2, y2 = min(crop.shape[1], int(max(xs))), min(crop.shape[0], int(max(ys)))
+                # Add small padding margins to make the plate look clean
+                pad_x = int((x2 - x1) * 0.15)
+                pad_y = int((y2 - y1) * 0.20)
+                px1 = max(0, x1 - pad_x)
+                py1 = max(0, y1 - pad_y)
+                px2 = min(crop.shape[1], x2 + pad_x)
+                py2 = min(crop.shape[0], y2 + pad_y)
+                plate_crop = crop[py1:py2, px1:px2]
+                if plate_crop.size > 0:
+                    return plate_crop
+            except Exception as e:
+                print(f"[SYSTEM] Precise plate cropping failed: {e}")
+                
+        # Bumper heuristic crop fallback (lower-middle 30% Y, middle 50% X)
+        h, w = crop.shape[:2]
+        return crop[int(h * 0.65):int(h * 0.95), int(w * 0.25):int(w * 0.75)]
+
     async def finalize_track(self, track_id):
         pass
+
 
 class StreamA_Processor(BaseStreamProcessor):
     def __init__(self):
         super().__init__("Stream A", Config.STREAM_A_CLASSES)
+        self.enhancement_api = RealESRGANAPI()
 
     async def finalize_track(self, track_id):
         clean_id = re.sub(r"\D", "", track_id)
@@ -175,15 +208,18 @@ class StreamA_Processor(BaseStreamProcessor):
         speed = state.get('speed', 42.1)
         violation = state.get('violation', False)
         
-        # Local OCR Only (PaddleOCR v4) - No API-based OCR fallback for front-facing vehicles
+        # Local OCR Only (PaddleOCR v4)
         plate_text = None
+        plate_bbox = None
         if hasattr(self, 'ocr_engine') and self.ocr_engine:
-            plate_text, conf = self.ocr_engine.read(crop)
-            if not plate_text or conf < 0.5:
+            plate_text, conf, plate_bbox = self.ocr_engine.read(crop)
+            if not plate_text or conf < 0.4:
                 plate_text = None
+                plate_bbox = None
 
         if not plate_text:
             plate_text = "Missing/Obstructed"
+            # Set violation flag for missing plates or speed infractions
             violation = True
 
         # Check if plate has already been logged in this session
@@ -193,9 +229,16 @@ class StreamA_Processor(BaseStreamProcessor):
                 return
             self.processed_plates.add(plate_text)
 
+        # Extract close-up license plate crop
+        plate_crop = self.crop_license_plate(crop, plate_bbox)
+
         # Save Snapshot
         save_path = os.path.join(Config.OUTPUT_LARGE_VEHICLES, f"{clean_id}.jpg")
-        cv2.imwrite(save_path, crop)
+        cv2.imwrite(save_path, plate_crop)
+
+        # Dispatch to Real-ESRGAN API for enhancement
+        restored_path = os.path.join(Config.OUTPUT_RESTORED, f"Restored_{clean_id}.jpg")
+        asyncio.create_task(self.enhancement_api.enhance_image(plate_crop, restored_path))
 
         # Save to DB with Speed, Timestamp, and actual detected Class_Name
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -237,10 +280,12 @@ class StreamB_Processor(BaseStreamProcessor):
         
         # Local OCR (PaddleOCR v4)
         plate_text = None
+        plate_bbox = None
         if hasattr(self, 'ocr_engine') and self.ocr_engine:
-            plate_text, conf = self.ocr_engine.read(crop)
-            if not plate_text or conf < 0.5:
+            plate_text, conf, plate_bbox = self.ocr_engine.read(crop)
+            if not plate_text or conf < 0.4:
                 plate_text = None
+                plate_bbox = None
 
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         time_only = datetime.datetime.now().strftime("%H:%M:%S")
@@ -270,13 +315,16 @@ class StreamB_Processor(BaseStreamProcessor):
             if not helmet_detected:
                 violation = True
 
+            # Extract close-up license plate crop
+            plate_crop = self.crop_license_plate(crop, plate_bbox)
+
             # Save Snapshot
             save_path = os.path.join(Config.OUTPUT_MOTORCYCLES, f"{clean_id}.jpg")
-            cv2.imwrite(save_path, crop)
+            cv2.imwrite(save_path, plate_crop)
 
-            # Dispatch to Real-ESRGAN API (for Motorcycles only)
+            # Dispatch to Real-ESRGAN API for enhancement
             restored_path = os.path.join(Config.OUTPUT_RESTORED, f"Restored_{clean_id}.jpg")
-            asyncio.create_task(self.enhancement_api.enhance_image(crop, restored_path))
+            asyncio.create_task(self.enhancement_api.enhance_image(plate_crop, restored_path))
 
             await self.db.log_motorcycle(clean_id, plate_text, helmet_detected, violation, speed, now_str)
             
@@ -289,7 +337,7 @@ class StreamB_Processor(BaseStreamProcessor):
             print(f"[Stream B] Processed {track_id} (Motorcycle): Plate={plate_text}, Helmet={helmet_detected}, Violation={violation}")
 
         elif class_name == "Auto-rickshaw":
-            # Auto-rickshaws utilize local OCR only and do not use API OCR or Real-ESRGAN
+            # Auto-rickshaws utilize local OCR only and do not use API OCR
             if not plate_text:
                 plate_text = "Missing/Obstructed"
 
@@ -300,8 +348,16 @@ class StreamB_Processor(BaseStreamProcessor):
                     return
                 self.processed_plates.add(plate_text)
 
+            # Extract close-up license plate crop
+            plate_crop = self.crop_license_plate(crop, plate_bbox)
+
             save_path = os.path.join(Config.OUTPUT_AUTORICKSHAWS, f"{clean_id}.jpg")
-            cv2.imwrite(save_path, crop)
+            cv2.imwrite(save_path, plate_crop)
+
+            # Dispatch to Real-ESRGAN API for enhancement
+            restored_path = os.path.join(Config.OUTPUT_RESTORED, f"Restored_{clean_id}.jpg")
+            asyncio.create_task(self.enhancement_api.enhance_image(plate_crop, restored_path))
+
             await self.db.log_auto_rickshaw(clean_id, plate_text, violation, speed, now_str)
             
             event_manager.publish("log", {
