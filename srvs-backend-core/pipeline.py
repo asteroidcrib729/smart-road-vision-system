@@ -96,24 +96,84 @@ class DeepOCSORTModule:
         self.min_hits = min_hits
         self.iou_threshold = iou_threshold
         self.tracks = {} # track_id -> track_state dict
+        self.track_counter = 0
+
+    def _calculate_iou(self, boxA, boxB):
+        # Calculate Intersection over Union of two bounding boxes
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[2], boxB[2])
+        yB = min(boxA[3], boxB[3])
+        
+        interArea = max(0, xB - xA) * max(0, yB - yA)
+        boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
+        boxBArea = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1])
+        
+        unionArea = boxAArea + boxBArea - interArea
+        if unionArea == 0:
+            return 0.0
+        return interArea / float(unionArea)
 
     def update(self, detections, features):
         active_tracks = []
         removed_tracks = []
-        
-        # O(1) Quick mock assignment matching spatial anchors for pipeline scaffolding
-        for i, det in enumerate(detections):
-            track_id = f"TR_{det['class']}_{i+1}"
-            bbox = det['bbox']
-            
-            # Formulate tracking payload dictionaries
-            track_payload = {
-                'track_id': track_id,
-                'bbox': bbox,
+
+        # 1. Update ages of all existing tracks
+        for tid in list(self.tracks.keys()):
+            self.tracks[tid]['age'] += 1
+
+        # 2. Match detections to existing tracks using IoU
+        matched_detections = set()
+        matched_tracks = set()
+
+        for tid, track in self.tracks.items():
+            best_iou = 0.0
+            best_det_idx = -1
+            for idx, det in enumerate(detections):
+                if idx in matched_detections:
+                    continue
+                # Class compatibility check to avoid mismatching vehicle categories
+                if det['class'] != track['class']:
+                    continue
+                iou = self._calculate_iou(track['bbox'], det['bbox'])
+                if iou > best_iou:
+                    best_iou = iou
+                    best_det_idx = idx
+
+            if best_iou >= self.iou_threshold and best_det_idx != -1:
+                self.tracks[tid]['bbox'] = detections[best_det_idx]['bbox']
+                self.tracks[tid]['age'] = 0
+                self.tracks[tid]['hits'] += 1
+                matched_detections.add(best_det_idx)
+                matched_tracks.add(tid)
+
+        # 3. Create new tracks for unmatched detections
+        for idx, det in enumerate(detections):
+            if idx in matched_detections:
+                continue
+            self.track_counter += 1
+            tid = f"TR_{det['class']}_{self.track_counter}"
+            self.tracks[tid] = {
+                'bbox': det['bbox'],
+                'age': 0,
+                'hits': 1,
                 'class': det['class']
             }
-            active_tracks.append(track_payload)
-            
+            matched_tracks.add(tid)
+
+        # 4. Filter active tracks and identify lost tracks
+        for tid in list(self.tracks.keys()):
+            track = self.tracks[tid]
+            if track['age'] > self.max_age:
+                removed_tracks.append({'track_id': tid})
+                del self.tracks[tid]
+            elif track['hits'] >= self.min_hits:
+                active_tracks.append({
+                    'track_id': tid,
+                    'bbox': track['bbox'],
+                    'class': track['class']
+                })
+
         return active_tracks, removed_tracks
 
 
