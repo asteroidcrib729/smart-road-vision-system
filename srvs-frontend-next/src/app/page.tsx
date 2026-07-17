@@ -397,7 +397,12 @@ export default function Home() {
   };
 
   const getVideoUrl = (feed: string) => {
-    if (ingestedFeeds.includes(feed)) {
+    if (!feed) return "";
+    if (
+      feed === 'SRVS - Footage of Front Number-Plates - New.mp4' || 
+      feed === 'SRVS - Footage of Rear Number-Plates - New.mp4' ||
+      ingestedFeeds.includes(feed)
+    ) {
       return `${API_URL}/api/videos/${feed}`;
     }
     return "https://photo-sphere-viewer-data.netlify.app/assets/equirectangular-video/Ayutthaya_HD.mp4";
