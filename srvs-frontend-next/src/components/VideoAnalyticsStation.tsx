@@ -247,7 +247,7 @@ export default function VideoAnalyticsStation({
           ref={videoRef}
           src={videoUrl}
           className="w-full h-full object-cover opacity-85"
-          preload="auto"
+          preload="metadata"
           loop
           muted
         />
