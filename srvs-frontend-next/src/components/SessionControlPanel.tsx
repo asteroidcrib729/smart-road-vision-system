@@ -30,6 +30,15 @@ export default function SessionControlPanel({
 }: SessionControlPanelProps) {
   const [driveUrl, setDriveUrl] = useState<string>('');
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+
+  // Parse URL search parameters on mount safely in the browser context only
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      setIsAdmin(params.get('admin') === 'true');
+    }
+  }, []);
 
   const extractFileId = (url: string): string | null => {
     // Matches standard drive file links like: https://drive.google.com/file/d/FILE_ID/view...
@@ -106,15 +115,17 @@ export default function SessionControlPanel({
               <span>INTERRUPT ENGINE</span>
             </button>
 
-            <button 
-              onClick={onMasterReset}
-              disabled={isProcessing}
-              className="flex items-center gap-2 px-3 py-2 bg-zinc-950 hover:bg-rose-950/40 text-zinc-400 hover:text-rose-200 border border-zinc-800 hover:border-rose-900 rounded text-xs font-bold transition-all cursor-pointer hover:scale-[1.02] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Master Reset: Delete Database & Clear Output Folders"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-              <span>MASTER RESET</span>
-            </button>
+            {isAdmin && (
+              <button 
+                onClick={onMasterReset}
+                disabled={isProcessing}
+                className="flex items-center gap-2 px-3 py-2 bg-zinc-950 hover:bg-rose-950/40 text-zinc-400 hover:text-rose-200 border border-zinc-800 hover:border-rose-900 rounded text-xs font-bold transition-all cursor-pointer hover:scale-[1.02] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Master Reset: Delete Database & Clear Output Folders"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                <span>MASTER RESET</span>
+              </button>
+            )}
           </div>
         </div>
 

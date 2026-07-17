@@ -289,10 +289,49 @@ async def api_get_csvs():
         
     return csv_database
 
+class ResetPayload(BaseModel):
+    password: str
+
 @app.post("/api/master-reset")
-async def api_master_reset():
+async def api_master_reset(payload: ResetPayload):
     try:
-        # 1. Close any database connections and drop tables to re-init empty database handler safely
+        import hashlib
+        from dotenv import load_dotenv
+        from utils.db_handler import DatabaseHandler
+        
+        # 1. Reload the environment variables from disk to pick up any SSH updates dynamically
+        config_dir = os.path.dirname(os.path.abspath(__file__))
+        load_dotenv(os.path.join(config_dir, ".env"), override=True)
+        
+        # 2. Retrieve password from environment
+        env_raw_pwd = os.environ.get("MASTER_RESET_PASSWORD", "srvs-admin-reset-2026")
+        env_hash = hashlib.sha256(env_raw_pwd.encode('utf-8')).hexdigest()
+        
+        # 3. Handle dynamic synchronization of secure_hash.txt
+        hash_file_path = os.path.join(Config.OUTPUT_DIR, "secure_hash.txt")
+        stored_hash = None
+        if os.path.exists(hash_file_path):
+            try:
+                with open(hash_file_path, "r", encoding="utf-8") as hf:
+                    stored_hash = hf.read().strip()
+            except Exception as e:
+                print(f"[SYSTEM] Warning: failed to read secure_hash.txt: {e}")
+                
+        if stored_hash != env_hash:
+            # Hash mismatched or file missing, sync/write new hash
+            try:
+                with open(hash_file_path, "w", encoding="utf-8") as hf:
+                    hf.write(env_hash)
+                print("[SYSTEM] Synchronized secure_hash.txt with updated MASTER_RESET_PASSWORD.")
+            except Exception as e:
+                print(f"[SYSTEM] Error writing secure_hash.txt: {e}")
+                
+        # 4. Compute hash of incoming passcode and compare to secure_hash.txt
+        client_hash = hashlib.sha256(payload.password.encode('utf-8')).hexdigest()
+        if client_hash != env_hash:
+            raise HTTPException(status_code=401, detail="Unauthorized: Invalid admin passcode.")
+
+        # 5. Close any database connections and drop tables to re-init empty database handler safely
         db_path = Config.DB_PATH
         if os.path.exists(db_path):
             import sqlite3
@@ -308,7 +347,7 @@ async def api_master_reset():
         # Reinitialize database schema handler to recreate empty table layout structure
         db_handler = DatabaseHandler(db_path)
         
-        # 2. Clear output folders (remove all JPGS/PNGS but keep directory nodes intact)
+        # 6. Clear output folders (remove all JPGS/PNGS but keep directory nodes intact)
         import shutil
         folders_to_clear = [
             Config.OUTPUT_LARGE_VEHICLES,
@@ -329,7 +368,7 @@ async def api_master_reset():
                     except Exception as e:
                         print(f"[SYSTEM] Failed to delete {file_path}. Reason: {e}")
                         
-        # 3. Delete generated CSV reports in Config.OUTPUT_DIR
+        # 7. Delete generated CSV reports in Config.OUTPUT_DIR
         csv_files = [
             "motorcycle_violations.csv",
             "rickshaws_unregistered_log.csv",
@@ -345,6 +384,8 @@ async def api_master_reset():
                     print(f"[SYSTEM] Failed to delete CSV {csv_path}. Reason: {e}")
                     
         return {"status": "success", "message": "Database and output assets cleared successfully."}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
