@@ -48,6 +48,7 @@ export default function VideoAnalyticsStation({
   });
 
   const [playbackRate, setPlaybackRate] = useState<number>(1);
+  const [isBuffering, setIsBuffering] = useState<boolean>(false);
 
   // 3. High-Speed 60 Hz Canvas Rendering Loop
   const renderTrackingOverlay = (): void => {
@@ -59,9 +60,12 @@ export default function VideoAnalyticsStation({
     if (!ctx) return;
 
     // Secure cross-scaling calculation steps natively against viewport size adjustments
-    if (canvas.width !== video.clientWidth || canvas.height !== video.clientHeight) {
-      canvas.width = video.clientWidth;
-      canvas.height = video.clientHeight;
+    // Math.floor prevents sub-pixel fluctuation loops (resolving CPU lag and video buffering)
+    const clientW = Math.floor(video.clientWidth);
+    const clientH = Math.floor(video.clientHeight);
+    if (clientW > 0 && clientH > 0 && (canvas.width !== clientW || canvas.height !== clientH)) {
+      canvas.width = clientW;
+      canvas.height = clientH;
       
       // Calculate transform scale profiles based on true 1440p media clip footprint boundaries
       scaleRef.current.x = canvas.width / nativeWidth;
@@ -155,10 +159,12 @@ export default function VideoAnalyticsStation({
 
     const handlePlay = (): void => {
       setPlaybackState((prev) => ({ ...prev, isPlaying: true }));
+      setIsBuffering(false);
     };
 
     const handlePause = (): void => {
       setPlaybackState((prev) => ({ ...prev, isPlaying: false }));
+      setIsBuffering(false);
     };
 
     const handleTimeUpdate = (): void => {
@@ -173,7 +179,20 @@ export default function VideoAnalyticsStation({
       setPlaybackState((prev) => ({ ...prev, totalDuration: video.duration }));
     };
 
+    const handleWaiting = (): void => {
+      setIsBuffering(true);
+    };
+
+    const handlePlaying = (): void => {
+      setIsBuffering(false);
+    };
+
+    const handleCanPlay = (): void => {
+      setIsBuffering(false);
+    };
+
     const handleSeeked = (): void => {
+      setIsBuffering(false);
       renderTrackingOverlay();
     };
 
@@ -182,6 +201,9 @@ export default function VideoAnalyticsStation({
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
     video.addEventListener('seeked', handleSeeked);
+    video.addEventListener('waiting', handleWaiting);
+    video.addEventListener('playing', handlePlaying);
+    video.addEventListener('canplay', handleCanPlay);
 
     // Apply active speed rate
     video.playbackRate = playbackRate;
@@ -192,6 +214,9 @@ export default function VideoAnalyticsStation({
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('seeked', handleSeeked);
+      video.removeEventListener('waiting', handleWaiting);
+      video.removeEventListener('playing', handlePlaying);
+      video.removeEventListener('canplay', handleCanPlay);
     };
   }, [fps, playbackRate]);
 
@@ -257,10 +282,19 @@ export default function VideoAnalyticsStation({
           className="absolute top-0 left-0 w-full h-full pointer-events-none z-10 transform-gpu"
         />
 
+        {/* 1. Loading Spinner Overlay when Backend processing initializes */}
         {isProcessing && Object.keys(telemetryData).length === 0 && (
           <div className="absolute inset-0 bg-zinc-950/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center gap-3">
             <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
             <p className="text-xs text-zinc-400 font-mono">Awaiting Ingestion Pipeline...</p>
+          </div>
+        )}
+
+        {/* 2. Loading Spinner Overlay when video is waiting/buffering stream chunks */}
+        {isBuffering && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-20 flex flex-col items-center justify-center gap-3 animate-in fade-in duration-200">
+            <div className="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            <span className="text-[10px] font-bold text-zinc-300 font-mono tracking-widest animate-pulse">BUFFERING STREAM...</span>
           </div>
         )}
       </div>
