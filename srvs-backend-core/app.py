@@ -144,6 +144,19 @@ def transcode_to_web_preview(filename: str):
         print(f"[SYSTEM] Input video path does not exist for transcoding: {input_path}")
         return
         
+    # Check resolution of existing preview to force upgrade to 1080p if it was transcoded at 720p previously
+    if os.path.exists(output_path):
+        try:
+            import cv2
+            cap = cv2.VideoCapture(output_path)
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            cap.release()
+            if width > 0 and width < 1920:
+                print(f"[SYSTEM] Existing preview {preview_name} is only {width}p. Force regenerating to 1080p Full HD...")
+                os.remove(output_path)
+        except Exception as e:
+            print(f"[SYSTEM] Failed to check preview resolution: {e}")
+        
     if not os.path.exists(output_path):
         # Prefer full system apt-installed ffmpeg over custom conda binary environments
         ffmpeg_bin = "/usr/bin/ffmpeg"
