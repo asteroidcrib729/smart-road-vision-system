@@ -257,7 +257,7 @@ export default function VideoAnalyticsStation({
           className="absolute top-0 left-0 w-full h-full pointer-events-none z-10 transform-gpu"
         />
 
-        {Object.keys(telemetryData).length === 0 && (
+        {isProcessing && Object.keys(telemetryData).length === 0 && (
           <div className="absolute inset-0 bg-zinc-950/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center gap-3">
             <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
             <p className="text-xs text-zinc-400 font-mono">Awaiting Ingestion Pipeline...</p>
