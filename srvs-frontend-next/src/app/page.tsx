@@ -338,6 +338,46 @@ export default function Home() {
     setDownloadError(null);
   };
 
+  const handleMasterReset = async () => {
+    if (!confirm("Are you sure you want to perform a MASTER RESET? This will drop all database tables, wipe all captured snapshots, clear all generated CSVs, and reset your workspace. Video download streams will remain untouched.")) {
+      return;
+    }
+    
+    // Stop any running stream first
+    if (isProcessing) {
+      await handleResetWorkspace();
+    }
+    
+    try {
+      const res = await fetch(`${API_URL}/api/master-reset`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        console.log("[SYSTEM] Master reset completed on backend.");
+        // Clear all states in UI
+        setIsProcessing(false);
+        setProcessProgress(0);
+        setActiveLogs([]);
+        setTelemetry({});
+        setSnapshots([]);
+        setCsvFiles([]);
+        setIsReviewDrawerOpen(false);
+        setSelectedReviewTrack(null);
+        setSelectedGallerySnapshot(null);
+        setDownloadError(null);
+        
+        // Refresh to fetch empty lists
+        await refreshBackendData();
+        alert("Master Reset Completed successfully!");
+      } else {
+        alert("Master Reset failed: backend returned an error.");
+      }
+    } catch (err) {
+      console.error("[ERROR] Failed to execute master reset:", err);
+      alert("Master Reset failed: connection error.");
+    }
+  };
+
   const getVideoUrl = (feed: string) => {
     if (ingestedFeeds.includes(feed)) {
       return `${API_URL}/videos/${feed}`;
@@ -370,6 +410,7 @@ export default function Home() {
               onStartProcessing={handleStartProcessing}
               processProgress={processProgress}
               onReset={handleResetWorkspace}
+              onMasterReset={handleMasterReset}
               onDownloadDriveVideo={handleDownloadDriveVideo}
               isDownloading={isDownloading}
               downloadError={downloadError}
