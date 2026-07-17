@@ -38,28 +38,56 @@ class PaddleOCREngine:
         if not self.ocr or img is None or img.size == 0:
             return None, 0.0, None
         try:
-            result = self.ocr.ocr(img, cls=False)
-            if not result or not result[0]:
-                return None, 0.0, None
+            # Pass 1: Focus on the lower-middle region where license plates are situated
+            h, w = img.shape[:2]
+            bumper_crop = img[int(h * 0.55):int(h * 0.95), int(w * 0.15):int(w * 0.85)]
             
-            texts = []
-            max_conf = 0.0
-            best_bbox = None
-            
-            for line in result[0]:
-                bbox = line[0] # [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
-                text_info = line[1] # ('TEXT', 0.95)
-                text = text_info[0].strip()
-                conf = text_info[1]
+            result = self.ocr.ocr(bumper_crop, cls=False)
+            if result and result[0]:
+                texts = []
+                max_conf = 0.0
+                best_bbox = None
                 
-                clean_text = re.sub(r'[^A-Za-z0-9]', '', text)
-                if len(clean_text) >= 3:
-                    texts.append(clean_text)
-                    if conf > max_conf:
-                        max_conf = conf
-                        best_bbox = bbox
-            if texts:
-                return "".join(texts), max_conf, best_bbox
+                for line in result[0]:
+                    bbox = line[0] # [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
+                    text_info = line[1] # ('TEXT', 0.95)
+                    text = text_info[0].strip()
+                    conf = text_info[1]
+                    
+                    clean_text = re.sub(r'[^A-Za-z0-9]', '', text)
+                    if len(clean_text) >= 3:
+                        texts.append(clean_text)
+                        if conf > max_conf:
+                            max_conf = conf
+                            # Map coordinates back to the original full image coordinates
+                            best_bbox = [
+                                [pt[0] + int(w * 0.15), pt[1] + int(h * 0.55)]
+                                for pt in bbox
+                            ]
+                if texts:
+                    return "".join(texts), max_conf, best_bbox
+
+            # Pass 2: Fallback to full crop if bumper crop didn't return text
+            result_full = self.ocr.ocr(img, cls=False)
+            if result_full and result_full[0]:
+                texts = []
+                max_conf = 0.0
+                best_bbox = None
+                
+                for line in result_full[0]:
+                    bbox = line[0]
+                    text_info = line[1]
+                    text = text_info[0].strip()
+                    conf = text_info[1]
+                    
+                    clean_text = re.sub(r'[^A-Za-z0-9]', '', text)
+                    if len(clean_text) >= 3:
+                        texts.append(clean_text)
+                        if conf > max_conf:
+                            max_conf = conf
+                            best_bbox = bbox
+                if texts:
+                    return "".join(texts), max_conf, best_bbox
         except Exception as e:
             print(f"[SYSTEM] Local OCR inference failed: {e}")
         return None, 0.0, None
@@ -292,11 +320,15 @@ class StreamA_Processor(BaseStreamProcessor):
         # Extract close-up license plate crop
         plate_crop = self.crop_license_plate(crop, plate_bbox)
 
-        # Save Snapshot
+        # Save the Entire Vehicle Crop as the main raw image
         save_path = os.path.join(Config.OUTPUT_LARGE_VEHICLES, f"{clean_id}.jpg")
-        cv2.imwrite(save_path, plate_crop)
+        cv2.imwrite(save_path, crop)
 
-        # Dispatch to Real-ESRGAN API for enhancement
+        # Save the raw Unrestored Plate crop
+        plate_raw_path = os.path.join(Config.OUTPUT_RESTORED, f"Plate_{clean_id}.jpg")
+        cv2.imwrite(plate_raw_path, plate_crop)
+
+        # Dispatch the plate crop to Real-ESRGAN API for enhancement
         restored_path = os.path.join(Config.OUTPUT_RESTORED, f"Restored_{clean_id}.jpg")
         asyncio.create_task(self.enhancement_api.enhance_image(plate_crop, restored_path))
 
@@ -378,9 +410,13 @@ class StreamB_Processor(BaseStreamProcessor):
             # Extract close-up license plate crop
             plate_crop = self.crop_license_plate(crop, plate_bbox)
 
-            # Save Snapshot
+            # Save the Entire Vehicle Crop as the main raw image
             save_path = os.path.join(Config.OUTPUT_MOTORCYCLES, f"{clean_id}.jpg")
-            cv2.imwrite(save_path, plate_crop)
+            cv2.imwrite(save_path, crop)
+
+            # Save the raw Unrestored Plate crop
+            plate_raw_path = os.path.join(Config.OUTPUT_RESTORED, f"Plate_{clean_id}.jpg")
+            cv2.imwrite(plate_raw_path, plate_crop)
 
             # Dispatch to Real-ESRGAN API for enhancement
             restored_path = os.path.join(Config.OUTPUT_RESTORED, f"Restored_{clean_id}.jpg")
@@ -411,8 +447,13 @@ class StreamB_Processor(BaseStreamProcessor):
             # Extract close-up license plate crop
             plate_crop = self.crop_license_plate(crop, plate_bbox)
 
+            # Save the Entire Vehicle Crop as the main raw image
             save_path = os.path.join(Config.OUTPUT_AUTORICKSHAWS, f"{clean_id}.jpg")
-            cv2.imwrite(save_path, plate_crop)
+            cv2.imwrite(save_path, crop)
+
+            # Save the raw Unrestored Plate crop
+            plate_raw_path = os.path.join(Config.OUTPUT_RESTORED, f"Plate_{clean_id}.jpg")
+            cv2.imwrite(plate_raw_path, plate_crop)
 
             # Dispatch to Real-ESRGAN API for enhancement
             restored_path = os.path.join(Config.OUTPUT_RESTORED, f"Restored_{clean_id}.jpg")

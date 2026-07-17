@@ -34,6 +34,7 @@ export interface EnhancedSnapshot {
   timestamp: string;
   rawImage: string;
   enhancedImage: string;
+  vehicleImage?: string;
   plateNumber: string;
   ocrMethod: 'Local OCR (PaddleOCR v4)' | 'Cloud API Fallback (Gemini)';
   confidence: number;
