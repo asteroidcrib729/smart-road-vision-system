@@ -158,7 +158,10 @@ def transcode_to_web_preview(filename: str):
                 "-s", "1280x720", "-r", "30", "-b:v", "1000k",
                 "-an", output_path
             ]
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode != 0:
+                print(f"[SYSTEM] ffmpeg failed with code {res.returncode}. Stderr: {res.stderr}")
+                return
             print(f"[SYSTEM] Web preview generation completed: {preview_name}")
         except Exception as e:
             print(f"[SYSTEM] Failed web preview transcoding: {str(e)}")
