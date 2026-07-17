@@ -64,7 +64,7 @@ export default function SnapshotsGallery({ snapshots, onSelect }: SnapshotsGalle
           >
             <div className="relative h-48 bg-black overflow-hidden">
               <img 
-                src={snap.rawImage} 
+                src={snap.vehicleImage || snap.rawImage} 
                 alt="Raw crop" 
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-80"
               />
