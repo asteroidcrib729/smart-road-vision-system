@@ -116,7 +116,8 @@ def upload_file_to_s3(local_path: str, s3_key: str):
         s3_client = boto3.client(
             "s3",
             aws_access_key_id=Config.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=Config.AWS_SECRET_ACCESS_KEY
+            aws_secret_access_key=Config.AWS_SECRET_ACCESS_KEY,
+            region_name="us-east-1"
         )
         s3_client.upload_file(
             local_path, 
@@ -150,11 +151,12 @@ def transcode_to_web_preview(filename: str):
             
         print(f"[SYSTEM] Transcoding {filename} to lightweight web-preview in background...")
         try:
-            # Run ffmpeg command: 720p 30fps 1M bitrate H.264 web optimization
+            # Run ffmpeg command: 720p 30fps 1M bitrate H.264 web optimization with ultrafast preset
             cmd = [
                 "ffmpeg", "-y", "-i", input_path,
-                "-vcodec", "libx264", "-s", "1280x720",
-                "-r", "30", "-b:v", "1000k", "-an", output_path
+                "-vcodec", "libx264", "-preset", "ultrafast",
+                "-s", "1280x720", "-r", "30", "-b:v", "1000k",
+                "-an", output_path
             ]
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             print(f"[SYSTEM] Web preview generation completed: {preview_name}")
@@ -409,6 +411,46 @@ async def api_get_csvs():
         })
         
     return csv_database
+
+@app.get("/api/videos/debug")
+async def api_debug_videos():
+    """Diagnostic route to inspect S3 connection, local file presence, and transcoding status."""
+    import boto3
+    from config import Config
+    
+    videos_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "videos")
+    local_files = []
+    if os.path.exists(videos_dir):
+        local_files = os.listdir(videos_dir)
+        
+    s3_files = []
+    s3_error = None
+    s3_connected = False
+    
+    if all([Config.AWS_ACCESS_KEY_ID, Config.AWS_SECRET_ACCESS_KEY, Config.AWS_S3_BUCKET]):
+        try:
+            s3_client = boto3.client(
+                "s3",
+                aws_access_key_id=Config.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=Config.AWS_SECRET_ACCESS_KEY,
+                region_name="us-east-1"
+            )
+            response = s3_client.list_objects_v2(Bucket=Config.AWS_S3_BUCKET)
+            s3_connected = True
+            if "Contents" in response:
+                s3_files = [obj["Key"] for obj in response["Contents"]]
+        except Exception as e:
+            s3_error = str(e)
+            
+    return {
+        "aws_configured": all([Config.AWS_ACCESS_KEY_ID, Config.AWS_SECRET_ACCESS_KEY, Config.AWS_S3_BUCKET, Config.AWS_CLOUDFRONT_DOMAIN]),
+        "cloudfront_domain": Config.AWS_CLOUDFRONT_DOMAIN,
+        "s3_bucket": Config.AWS_S3_BUCKET,
+        "s3_connected": s3_connected,
+        "s3_error": s3_error,
+        "local_video_files": local_files,
+        "s3_bucket_files": s3_files
+    }
 
 @app.get("/api/videos/{video_name}")
 async def api_stream_video(video_name: str, range: str = Header(None)):
