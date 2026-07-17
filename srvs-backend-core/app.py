@@ -240,6 +240,42 @@ async def api_get_ledger(category: str = Query("Motorcycle", pattern="^(Motorcyc
 @app.get("/api/csv-explorer")
 async def api_get_csvs():
     """List compiled CSV files and parse their rows for real-time client audit."""
+    db_empty = True
+    if os.path.exists(Config.DB_PATH):
+        try:
+            conn = sqlite3.connect(Config.DB_PATH)
+            cursor = conn.cursor()
+            
+            # Check count for Motorcycles table if exists
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Motorcycles'")
+            if cursor.fetchone():
+                cursor.execute("SELECT COUNT(*) FROM Motorcycles")
+                c1 = cursor.fetchone()[0]
+            else:
+                c1 = 0
+                
+            # Check count for Auto_Rickshaws table if exists
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Auto_Rickshaws'")
+            if cursor.fetchone():
+                cursor.execute("SELECT COUNT(*) FROM Auto_Rickshaws")
+                c2 = cursor.fetchone()[0]
+            else:
+                c2 = 0
+                
+            # Check count for Large_Vehicles table if exists
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Large_Vehicles'")
+            if cursor.fetchone():
+                cursor.execute("SELECT COUNT(*) FROM Large_Vehicles")
+                c3 = cursor.fetchone()[0]
+            else:
+                c3 = 0
+                
+            if (c1 + c2 + c3) > 0:
+                db_empty = False
+            conn.close()
+        except Exception:
+            pass
+            
     csv_database = []
     
     files = [
@@ -250,6 +286,14 @@ async def api_get_csvs():
     
     for f in files:
         path = os.path.join(Config.OUTPUT_DIR, f["name"])
+        
+        # If database has no entries, clear/delete stale template files from previous runs
+        if db_empty and os.path.exists(path):
+            try:
+                os.unlink(path)
+            except Exception:
+                pass
+                
         headers = []
         rows = []
         if os.path.exists(path):
@@ -277,17 +321,18 @@ async def api_get_csvs():
             except Exception as e:
                 print(f"[ERROR] Failed to read {f['name']}: {str(e)}")
         
-        # If files don't exist yet, we add empty rows
+        # Return empty rows structure if file is deleted or database is empty
         csv_database.append({
             "name": f["name"],
-            "size": f"{os.path.getsize(path) / 1024:.1f} KB" if os.path.exists(path) else f["size"],
+            "size": f"{os.path.getsize(path) / 1024:.1f} KB" if os.path.exists(path) else "0.0 KB",
             "recordsCount": len(rows),
-            "lastUpdated": f["lastUpdated"],
+            "lastUpdated": f["lastUpdated"] if os.path.exists(path) else "N/A",
             "headers": headers if headers else ["Tracking_ID", "Read_Number_Plate", "Violation_Detected"],
             "rows": rows
         })
         
     return csv_database
+
 
 class ResetPayload(BaseModel):
     password: str
