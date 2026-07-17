@@ -2,7 +2,7 @@ import os
 import sqlite3
 import csv
 import asyncio
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Query
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Query, Header
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -332,6 +332,64 @@ async def api_get_csvs():
         })
         
     return csv_database
+
+@app.get("/api/videos/{video_name}")
+async def api_stream_video(video_name: str, range: str = Header(None)):
+    """Serve video streams using standard HTTP bytes Range requests to support seeking and zero-buffering."""
+    video_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "videos", video_name)
+    if not os.path.exists(video_path):
+        raise HTTPException(status_code=404, detail="Video not found")
+        
+    file_size = os.path.getsize(video_path)
+    chunk_size = 1024 * 1024  # Serve 1MB chunks maximum to prevent thread blocking
+    
+    if range:
+        # Parse range header: e.g. "bytes=0-1000000"
+        try:
+            ranges = range.replace("bytes=", "").split("-")
+            start = int(ranges[0])
+            end = int(ranges[1]) if (len(ranges) > 1 and ranges[1]) else start + chunk_size
+            end = min(end, file_size - 1)
+        except Exception:
+            start = 0
+            end = min(chunk_size, file_size - 1)
+            
+        length = end - start + 1
+        
+        def get_chunk():
+            with open(video_path, "rb") as f:
+                f.seek(start)
+                bytes_to_read = length
+                while bytes_to_read > 0:
+                    chunk = f.read(min(1024 * 64, bytes_to_read))
+                    if not chunk:
+                        break
+                    bytes_to_read -= len(chunk)
+                    yield chunk
+                    
+        headers = {
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(length),
+            "Content-Type": "video/mp4",
+        }
+        return StreamingResponse(get_chunk(), status_code=206, headers=headers)
+        
+    else:
+        def get_all():
+            with open(video_path, "rb") as f:
+                while True:
+                    chunk = f.read(1024 * 64)
+                    if not chunk:
+                        break
+                    yield chunk
+                    
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(file_size),
+            "Content-Type": "video/mp4",
+        }
+        return StreamingResponse(get_all(), headers=headers)
 
 
 class ResetPayload(BaseModel):

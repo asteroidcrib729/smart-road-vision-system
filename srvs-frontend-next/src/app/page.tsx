@@ -398,7 +398,7 @@ export default function Home() {
 
   const getVideoUrl = (feed: string) => {
     if (ingestedFeeds.includes(feed)) {
-      return `${API_URL}/videos/${feed}`;
+      return `${API_URL}/api/videos/${feed}`;
     }
     return "https://photo-sphere-viewer-data.netlify.app/assets/equirectangular-video/Ayutthaya_HD.mp4";
   };
