@@ -124,11 +124,11 @@ def transcode_to_web_preview(filename: str):
         
     print(f"[SYSTEM] Transcoding {filename} to lightweight web-preview in background...")
     try:
-        # Run ffmpeg command: 720p 30fps 1.5M bitrate H.264 web optimization
+        # Run ffmpeg command: 720p 30fps 1M bitrate H.264 web optimization
         cmd = [
             "ffmpeg", "-y", "-i", input_path,
             "-vcodec", "libx264", "-s", "1280x720",
-            "-r", "30", "-b:v", "1500k", "-an", output_path
+            "-r", "30", "-b:v", "1000k", "-an", output_path
         ]
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"[SYSTEM] Web preview generation completed: web_preview_{filename}")
