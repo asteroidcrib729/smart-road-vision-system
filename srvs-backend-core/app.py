@@ -103,24 +103,70 @@ async def run_pipeline_wrapper(video_filename: str):
         pipeline_running = False
         pipeline_task = None
 
+def transcode_to_web_preview(filename: str):
+    import subprocess
+    import shutil
+    
+    videos_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "videos")
+    input_path = os.path.join(videos_dir, filename)
+    output_path = os.path.join(videos_dir, f"web_preview_{filename}")
+    
+    if not os.path.exists(input_path):
+        print(f"[SYSTEM] Input video path does not exist for transcoding: {input_path}")
+        return
+    if os.path.exists(output_path):
+        print(f"[SYSTEM] Web preview already exists for {filename}. Skipping.")
+        return
+        
+    if not shutil.which("ffmpeg"):
+        print("[SYSTEM] Warning: ffmpeg executable is not available on host. Transcoding skipped.")
+        return
+        
+    print(f"[SYSTEM] Transcoding {filename} to lightweight web-preview in background...")
+    try:
+        # Run ffmpeg command: 720p 30fps 1.5M bitrate H.264 web optimization
+        cmd = [
+            "ffmpeg", "-y", "-i", input_path,
+            "-vcodec", "libx264", "-s", "1280x720",
+            "-r", "30", "-b:v", "1500k", "-an", output_path
+        ]
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"[SYSTEM] Web preview generation completed: web_preview_{filename}")
+    except Exception as e:
+        print(f"[SYSTEM] Failed web preview transcoding: {str(e)}")
+
+def check_and_transcode_existing_videos():
+    videos_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "videos")
+    if not os.path.exists(videos_dir):
+        return
+    for filename in os.listdir(videos_dir):
+        if filename.endswith(".mp4") and not filename.startswith("web_preview_"):
+            transcode_to_web_preview(filename)
+
+import threading
+# Spawn daemon thread to automatically transcode existing videos on startup
+threading.Thread(target=check_and_transcode_existing_videos, daemon=True).start()
+
 @app.post("/api/video/download")
-async def api_download_video(payload: DownloadPayload):
-    """Securely download a video from Google Drive at runtime."""
+async def api_download_video(payload: DownloadPayload, background_tasks: BackgroundTasks):
+    """Securely download a video from Google Drive at runtime and trigger web preview transcoding."""
     try:
         path = download_drive_file(payload.file_id)
         filename = os.path.basename(path)
+        # Trigger background transcoding to keep API response times immediate
+        background_tasks.add_task(transcode_to_web_preview, filename)
         return {"status": "success", "file_path": path, "file_id": payload.file_id, "filename": filename}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/videos/list")
 async def api_list_videos():
-    """List all video files downloaded and present in the local directory."""
+    """List all video files downloaded, hiding internal web preview duplicates from client lists."""
     videos_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "videos")
     if not os.path.exists(videos_dir):
         return []
     try:
-        files = [f for f in os.listdir(videos_dir) if f.endswith(".mp4")]
+        files = [f for f in os.listdir(videos_dir) if f.endswith(".mp4") and not f.startswith("web_preview_")]
         return files
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -336,7 +382,17 @@ async def api_get_csvs():
 @app.get("/api/videos/{video_name}")
 async def api_stream_video(video_name: str, range: str = Header(None)):
     """Serve video streams using standard HTTP bytes Range requests to support seeking and zero-buffering."""
-    video_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "videos", video_name)
+    videos_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "videos")
+    
+    # Check if a lightweight web-preview version is available, and stream it instead
+    preview_name = f"web_preview_{video_name}"
+    preview_path = os.path.join(videos_dir, preview_name)
+    
+    if os.path.exists(preview_path):
+        video_path = preview_path
+    else:
+        video_path = os.path.join(videos_dir, video_name)
+        
     if not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail="Video not found")
         
