@@ -195,6 +195,17 @@ export default function VideoAnalyticsStation({
     };
   }, [fps, playbackRate]);
 
+  // Automatically reset video playback to the beginning and start playback when engine starts processing
+  useEffect(() => {
+    if (isProcessing && videoRef.current) {
+      videoRef.current.currentTime = 0;
+      videoRef.current.play().catch((err) => {
+        console.warn("[SYSTEM] Autoplay request on engine start was interrupted:", err);
+      });
+      renderTrackingOverlay();
+    }
+  }, [isProcessing]);
+
   // Speed and Fullscreen actions
   const handleSpeedChange = (rate: number) => {
     setPlaybackRate(rate);
