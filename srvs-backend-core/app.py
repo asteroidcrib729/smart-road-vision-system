@@ -151,9 +151,10 @@ def transcode_to_web_preview(filename: str):
             cap = cv2.VideoCapture(output_path)
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             cap.release()
-            if width > 0 and width < 1920:
-                print(f"[SYSTEM] Existing preview {preview_name} is only {width}p. Force regenerating to 1080p Full HD...")
-                os.remove(output_path)
+            if width != 1920:
+                print(f"[SYSTEM] Existing preview {preview_name} resolution is {width}p. Force regenerating to 1080p Full HD...")
+                if os.path.exists(output_path):
+                    os.remove(output_path)
         except Exception as e:
             print(f"[SYSTEM] Failed to check preview resolution: {e}")
         
