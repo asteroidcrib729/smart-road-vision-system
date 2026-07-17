@@ -124,6 +124,7 @@ class BaseStreamProcessor:
         # Track State Buffer: store best crop heuristics and info
         self.track_states = {}
         self.processed_tracks = set() # Track already finalized IDs to prevent duplicate API requests
+        self.processed_plates = set() # Track already logged plates to avoid duplicates within a run
 
         # Ensure directories exist
         os.makedirs(Config.OUTPUT_LARGE_VEHICLES, exist_ok=True)
@@ -184,6 +185,13 @@ class StreamA_Processor(BaseStreamProcessor):
         if not plate_text:
             plate_text = "Missing/Obstructed"
             violation = True
+
+        # Check if plate has already been logged in this session
+        if plate_text != "Missing/Obstructed":
+            if plate_text in self.processed_plates:
+                print(f"[Stream A] Skipped duplicate plate: {plate_text}")
+                return
+            self.processed_plates.add(plate_text)
 
         # Save Snapshot
         save_path = os.path.join(Config.OUTPUT_LARGE_VEHICLES, f"{clean_id}.jpg")
@@ -247,6 +255,13 @@ class StreamB_Processor(BaseStreamProcessor):
             if not plate_text:
                 plate_text = "Missing/Obstructed"
 
+            # Check if plate has already been logged in this session
+            if plate_text != "Missing/Obstructed":
+                if plate_text in self.processed_plates:
+                    print(f"[Stream B] Skipped duplicate Motorcycle plate: {plate_text}")
+                    return
+                self.processed_plates.add(plate_text)
+
             helmet_detected = False
             async with api_cooldown_lock:
                 helmet_detected = await self.helmet_api.extract_helmet(crop)
@@ -277,6 +292,13 @@ class StreamB_Processor(BaseStreamProcessor):
             # Auto-rickshaws utilize local OCR only and do not use API OCR or Real-ESRGAN
             if not plate_text:
                 plate_text = "Missing/Obstructed"
+
+            # Check if plate has already been logged in this session
+            if plate_text != "Missing/Obstructed":
+                if plate_text in self.processed_plates:
+                    print(f"[Stream B] Skipped duplicate Auto-rickshaw plate: {plate_text}")
+                    return
+                self.processed_plates.add(plate_text)
 
             save_path = os.path.join(Config.OUTPUT_AUTORICKSHAWS, f"{clean_id}.jpg")
             cv2.imwrite(save_path, crop)
@@ -428,7 +450,9 @@ class VideoPipelineAsync:
                         "tracks": tracks_data
                     })
 
-                await asyncio.sleep(0.1) # Yield loop for SSE stream performance
+                # Yield loop to prevent blocking ASGI thread, but optimize sleep duration for speed
+                if frame_count % 15 == 0:
+                    await asyncio.sleep(0.005)
 
             # 3. Finalize any remaining active tracks at the end of the video
             for track_id in list(processor.track_states.keys()):

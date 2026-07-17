@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useEffect, ChangeEvent } from 'react';
-import { Play, Pause } from 'lucide-react';
+import { Play, Pause, Maximize } from 'lucide-react';
 import { TelemetryMap, ToggleState, PlaybackState } from './types';
 
 export interface VideoAnalyticsStationProps {
@@ -11,6 +11,7 @@ export interface VideoAnalyticsStationProps {
   nativeWidth?: number;  // Matching your 1440p horizontal resolution: 2560
   nativeHeight?: number; // Matching your 1440p vertical resolution: 1440
   fps?: number;          // Processing cadence loop configuration: 60
+  isProcessing?: boolean; // Disable controls during core engine runs
 }
 
 export default function VideoAnalyticsStation({
@@ -19,20 +20,18 @@ export default function VideoAnalyticsStation({
   streamLabel = "ZONE 1: STREAM PANEL CONTAINER",
   nativeWidth = 2560,
   nativeHeight = 1440,
-  fps = 60
+  fps = 60,
+  isProcessing = false
 }: VideoAnalyticsStationProps): React.JSX.Element {
   
   // 1. Hardware & Virtual Canvas DOM Reference Points
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  
-  // Reference pools allocated outside the execution path to defeat Garbage Collection thrashing
   const scaleRef = useRef<{ x: number; y: number }>({ x: 1, y: 1 });
   const metricsRef = useRef<{ currentFrame: number; x: number; y: number; w: number; h: number }>({
     currentFrame: 0, x: 0, y: 0, w: 0, h: 0
   });
-
+  
   // 2. Interactive Toggle Deck State Engines
   const [toggles, setToggles] = useState<ToggleState>({
     showBBoxes: true,
@@ -48,7 +47,9 @@ export default function VideoAnalyticsStation({
     computedFrame: 0
   });
 
-  // 3. High-Speed 60 Hz Canvas Rendering Loop Thread
+  const [playbackRate, setPlaybackRate] = useState<number>(1);
+
+  // 3. High-Speed 60 Hz Canvas Rendering Loop
   const renderTrackingOverlay = (): void => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -119,28 +120,45 @@ export default function VideoAnalyticsStation({
         ctx.fillText(`${track.speed.toFixed(1)} km/h`, metricsRef.current.x + 4, metricsRef.current.y + metricsRef.current.h - 6);
       }
     }
-
-    // Keep running drawing requests as long as video state indicates playback is active
-    if (!video.paused && !video.ended) {
-      animationFrameRef.current = requestAnimationFrame(renderTrackingOverlay);
-    }
   };
 
-  // 4. Asynchronous Lifecycle Listeners & Event Mapping Layers
+  // 4. Stable requestAnimationFrame drawing lifecycle connection
+  useEffect(() => {
+    let animId: number | null = null;
+
+    const tick = () => {
+      renderTrackingOverlay();
+      const video = videoRef.current;
+      if (video && !video.paused && !video.ended) {
+        animId = requestAnimationFrame(tick);
+      }
+    };
+
+    const video = videoRef.current;
+    if (video && !video.paused && !video.ended) {
+      animId = requestAnimationFrame(tick);
+    } else {
+      renderTrackingOverlay(); // Paint a single frame when paused or seeking
+    }
+
+    return () => {
+      if (animId !== null) {
+        cancelAnimationFrame(animId);
+      }
+    };
+  }, [telemetryData, toggles, playbackState.isPlaying]);
+
+  // 5. Asynchronous Lifecycle Listeners & Event Mapping Layers
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     const handlePlay = (): void => {
       setPlaybackState((prev) => ({ ...prev, isPlaying: true }));
-      animationFrameRef.current = requestAnimationFrame(renderTrackingOverlay);
     };
 
     const handlePause = (): void => {
       setPlaybackState((prev) => ({ ...prev, isPlaying: false }));
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
     };
 
     const handleTimeUpdate = (): void => {
@@ -153,19 +171,20 @@ export default function VideoAnalyticsStation({
 
     const handleLoadedMetadata = (): void => {
       setPlaybackState((prev) => ({ ...prev, totalDuration: video.duration }));
-      renderTrackingOverlay(); // Paint first structural snapshot immediately on file load
     };
 
     const handleSeeked = (): void => {
-      renderTrackingOverlay(); // Force frame bounding updates during timeline slider scrubbing
+      renderTrackingOverlay();
     };
 
-    // Standardize event target registration loops
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
     video.addEventListener('seeked', handleSeeked);
+
+    // Apply active speed rate
+    video.playbackRate = playbackRate;
 
     return () => {
       video.removeEventListener('play', handlePlay);
@@ -173,16 +192,40 @@ export default function VideoAnalyticsStation({
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('seeked', handleSeeked);
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
     };
-  }, [telemetryData, toggles]);
+  }, [fps, playbackRate]);
 
-  // Sync rendering pipeline triggers on parameters change
+  // Automatically reset video playback to the beginning and start playback when engine starts processing
   useEffect(() => {
-    renderTrackingOverlay();
-  }, [telemetryData, toggles]);
+    if (isProcessing && videoRef.current) {
+      videoRef.current.currentTime = 0;
+      videoRef.current.play().catch((err) => {
+        console.warn("[SYSTEM] Autoplay request on engine start was interrupted:", err);
+      });
+      renderTrackingOverlay();
+    }
+  }, [isProcessing]);
+
+  // Speed and Fullscreen actions
+  const handleSpeedChange = (rate: number) => {
+    setPlaybackRate(rate);
+    if (videoRef.current) {
+      videoRef.current.playbackRate = rate;
+    }
+  };
+
+  const handleFullscreenToggle = () => {
+    const videoContainer = videoRef.current?.parentElement;
+    if (videoContainer) {
+      if (!document.fullscreenElement) {
+        videoContainer.requestFullscreen().catch((err) => {
+          console.error("Failed to enter full-screen:", err);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    }
+  };
 
   return (
     <div className="w-full bg-zinc-900/40 p-4 rounded-xl border border-zinc-800 flex flex-col gap-4">
@@ -222,26 +265,65 @@ export default function VideoAnalyticsStation({
         )}
       </div>
 
-      {/* MANUAL TIMELINE CONTROLLER LAYER */}
-      <div className="flex items-center gap-4 bg-zinc-950 p-3 rounded-lg border border-zinc-850">
+      {/* MANUAL TIMELINE CONTROLLER LAYER WITH FAST-FORWARD & FULLSCREEN */}
+      <div className="flex flex-col sm:flex-row items-center gap-4 bg-zinc-950 p-3 rounded-lg border border-zinc-850">
+        
+        {/* Play/Pause Button - Disabled during active engine processing */}
         <button 
           onClick={() => videoRef.current && (playbackState.isPlaying ? videoRef.current.pause() : videoRef.current.play())}
-          className="px-4 py-1.5 rounded text-xs font-bold transition-all bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 active:scale-95 min-w-[70px] flex items-center gap-2 cursor-pointer font-mono"
+          disabled={isProcessing}
+          className="p-2 rounded-full transition-all bg-zinc-900 hover:bg-zinc-800 disabled:bg-zinc-950 disabled:text-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed border border-zinc-800 text-zinc-200 active:scale-95 flex items-center justify-center cursor-pointer"
+          title={isProcessing ? 'Locked during engine processing' : (playbackState.isPlaying ? 'Pause' : 'Play')}
         >
-          {playbackState.isPlaying ? <Pause className="w-3.5 h-3.5 text-yellow-500" /> : <Play className="w-3.5 h-3.5 text-emerald-500" />}
-          {playbackState.isPlaying ? 'PAUSE' : 'PLAY'}
+          {playbackState.isPlaying ? <Pause className="w-4 h-4 text-yellow-500" /> : <Play className="w-4 h-4 text-emerald-500" />}
         </button>
-        
-        <div className="flex-grow text-xs text-zinc-400 flex items-center justify-between">
-          <span className="font-mono text-zinc-500">{playbackState.currentTime.toFixed(2)}s</span>
-          <div className="w-full mx-4 h-1 bg-zinc-900 rounded-full overflow-hidden relative">
-            <div 
-              className="absolute left-0 top-0 h-full bg-emerald-500 transition-all duration-75"
-              style={{ width: `${(playbackState.currentTime / (playbackState.totalDuration || 1)) * 100}%` }}
-            />
-          </div>
-          <span className="font-mono text-zinc-500">{(playbackState.totalDuration || 10).toFixed(2)}s</span>
+
+        {/* Speed Controls: 1x, 2x, 4x - Disabled during processing */}
+        <div className={`flex bg-zinc-900 border border-zinc-800 p-0.5 rounded text-[10px] font-bold ${isProcessing ? 'opacity-40' : ''}`}>
+          {([1, 2, 4] as const).map((rate) => (
+            <button
+              key={rate}
+              onClick={() => handleSpeedChange(rate)}
+              disabled={isProcessing}
+              className={`px-2 py-1 rounded transition-colors disabled:cursor-not-allowed ${
+                playbackRate === rate && !isProcessing ? 'bg-emerald-500 text-black font-bold' : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              {rate}x
+            </button>
+          ))}
         </div>
+        
+        {/* Clickable and Scrubbable Timeline Slider - Disabled during processing */}
+        <div className="flex-grow w-full text-xs text-zinc-400 flex items-center justify-between gap-3">
+          <span className="font-mono text-zinc-550 shrink-0">{playbackState.currentTime.toFixed(2)}s</span>
+          <input 
+            type="range"
+            min={0}
+            max={playbackState.totalDuration || 10}
+            step={0.05}
+            value={playbackState.currentTime}
+            disabled={isProcessing}
+            onChange={(e) => {
+              const targetTime = parseFloat(e.target.value);
+              if (videoRef.current) {
+                videoRef.current.currentTime = targetTime;
+              }
+              setPlaybackState(prev => ({ ...prev, currentTime: targetTime }));
+            }}
+            className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-emerald-500 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed"
+          />
+          <span className="font-mono text-zinc-550 shrink-0">{(playbackState.totalDuration || 10).toFixed(2)}s</span>
+        </div>
+
+        {/* Fullscreen Button - Kept interactive so user can inspect fullscreen processing streams */}
+        <button
+          onClick={handleFullscreenToggle}
+          className="p-2 rounded transition-all bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 active:scale-95 flex items-center justify-center cursor-pointer"
+          title="Fullscreen Mode"
+        >
+          <Maximize className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* THE INTERACTIVE TRACKING TOGGLE DECK PANEL */}

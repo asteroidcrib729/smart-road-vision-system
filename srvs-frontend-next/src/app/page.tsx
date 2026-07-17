@@ -47,6 +47,9 @@ export default function Home() {
   const [selectedReviewTrack, setSelectedReviewTrack] = useState<EnhancedSnapshot | null>(null);
   const [isReviewDrawerOpen, setIsReviewDrawerOpen] = useState<boolean>(false);
   const [selectedGallerySnapshot, setSelectedGallerySnapshot] = useState<EnhancedSnapshot | null>(null);
+  const [isResetModalOpen, setIsResetModalOpen] = useState<boolean>(false);
+  const [resetPasscode, setResetPasscode] = useState<string>('');
+  const [resetModalError, setResetModalError] = useState<string | null>(null);
 
   // Backend connection status flag
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
@@ -93,19 +96,14 @@ export default function Home() {
           enhancedImage: item.enhancedImage.startsWith("http") ? item.enhancedImage : `${API_URL}${item.enhancedImage}`
         }));
         
-        // Only set snapshots if backend has items, otherwise use initial mocks
-        if (combined.length > 0) {
-          setSnapshots(combined);
-        }
+        setSnapshots(combined);
       }
 
       // 2. Fetch CSV files metadata and rows
       const csvRes = await fetch(`${API_URL}/api/csv-explorer`);
       if (csvRes.ok) {
         const csvs = await csvRes.json();
-        if (csvs.length > 0) {
-          setCsvFiles(csvs);
-        }
+        setCsvFiles(csvs);
       }
 
       // 3. Fetch list of downloaded video files from backend to resolve dynamic playback
@@ -343,6 +341,61 @@ export default function Home() {
     setDownloadError(null);
   };
 
+  const handleMasterReset = () => {
+    setIsResetModalOpen(true);
+    setResetPasscode('');
+    setResetModalError(null);
+  };
+
+  const submitMasterReset = async () => {
+    if (!resetPasscode.trim()) {
+      setResetModalError("Please enter a passcode.");
+      return;
+    }
+    
+    // Stop any running stream first
+    if (isProcessing) {
+      await handleResetWorkspace();
+    }
+    
+    try {
+      const res = await fetch(`${API_URL}/api/master-reset`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ password: resetPasscode })
+      });
+      if (res.ok) {
+        console.log("[SYSTEM] Master reset completed on backend.");
+        setIsResetModalOpen(false);
+        setResetPasscode('');
+        
+        // Clear all states in UI
+        setIsProcessing(false);
+        setProcessProgress(0);
+        setActiveLogs([]);
+        setTelemetry({});
+        setSnapshots([]);
+        setCsvFiles([]);
+        setIsReviewDrawerOpen(false);
+        setSelectedReviewTrack(null);
+        setSelectedGallerySnapshot(null);
+        setDownloadError(null);
+        
+        // Refresh to fetch empty lists
+        await refreshBackendData();
+        alert("Master Reset Completed successfully!");
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setResetModalError(errData.detail || "Master Reset failed: Invalid admin passcode.");
+      }
+    } catch (err) {
+      console.error("[ERROR] Failed to execute master reset:", err);
+      setResetModalError("Master Reset failed: connection error.");
+    }
+  };
+
   const getVideoUrl = (feed: string) => {
     if (ingestedFeeds.includes(feed)) {
       return `${API_URL}/videos/${feed}`;
@@ -375,6 +428,7 @@ export default function Home() {
               onStartProcessing={handleStartProcessing}
               processProgress={processProgress}
               onReset={handleResetWorkspace}
+              onMasterReset={handleMasterReset}
               onDownloadDriveVideo={handleDownloadDriveVideo}
               isDownloading={isDownloading}
               downloadError={downloadError}
@@ -392,6 +446,7 @@ export default function Home() {
                   nativeWidth={2560}
                   nativeHeight={1440}
                   fps={60}
+                  isProcessing={isProcessing}
                 />
               </div>
 
@@ -440,6 +495,58 @@ export default function Home() {
           snapshot={selectedGallerySnapshot}
           onConfirm={handleConfirmReview}
         />
+
+        {/* 2FA Master Reset Passcode Modal */}
+        {isResetModalOpen && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl max-w-sm w-full p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-205">
+              <div className="flex flex-col gap-1">
+                <h4 className="text-xs font-black tracking-widest text-zinc-300 uppercase">2FA AUTHORIZATION REQUIRED</h4>
+                <p className="text-[10px] text-zinc-500 font-mono">Enter your Admin Passcode to authorize a master system reset.</p>
+              </div>
+              
+              <input 
+                type="password"
+                placeholder="Enter Admin Passcode..."
+                value={resetPasscode}
+                onChange={(e) => {
+                  setResetPasscode(e.target.value);
+                  setResetModalError(null);
+                }}
+                onKeyDown={async (e) => {
+                  if (e.key === 'Enter') {
+                    await submitMasterReset();
+                  }
+                }}
+                className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded px-3 py-2 w-full outline-none focus:border-emerald-500 font-mono"
+                autoFocus
+              />
+
+              {resetModalError && (
+                <p className="text-[10px] text-rose-400 font-bold font-mono text-center">{resetModalError}</p>
+              )}
+
+              <div className="flex gap-3 justify-end mt-2">
+                <button 
+                  onClick={() => {
+                    setIsResetModalOpen(false);
+                    setResetPasscode('');
+                    setResetModalError(null);
+                  }}
+                  className="px-3 py-1.5 bg-zinc-950 border border-zinc-850 hover:bg-zinc-900 hover:border-zinc-800 text-zinc-450 hover:text-zinc-200 rounded text-xs font-bold transition-all cursor-pointer font-mono"
+                >
+                  CANCEL
+                </button>
+                <button 
+                  onClick={submitMasterReset}
+                  className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded text-xs font-bold transition-all hover:scale-[1.02] active:scale-95 cursor-pointer shadow-[0_0_8px_rgba(225,29,72,0.3)] font-mono"
+                >
+                  AUTHORIZE RESET
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </main>
 
