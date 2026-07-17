@@ -93,19 +93,14 @@ export default function Home() {
           enhancedImage: item.enhancedImage.startsWith("http") ? item.enhancedImage : `${API_URL}${item.enhancedImage}`
         }));
         
-        // Only set snapshots if backend has items, otherwise use initial mocks
-        if (combined.length > 0) {
-          setSnapshots(combined);
-        }
+        setSnapshots(combined);
       }
 
       // 2. Fetch CSV files metadata and rows
       const csvRes = await fetch(`${API_URL}/api/csv-explorer`);
       if (csvRes.ok) {
         const csvs = await csvRes.json();
-        if (csvs.length > 0) {
-          setCsvFiles(csvs);
-        }
+        setCsvFiles(csvs);
       }
 
       // 3. Fetch list of downloaded video files from backend to resolve dynamic playback
