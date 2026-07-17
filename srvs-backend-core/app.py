@@ -145,15 +145,20 @@ def transcode_to_web_preview(filename: str):
         return
         
     if not os.path.exists(output_path):
-        if not shutil.which("ffmpeg"):
+        # Prefer full system apt-installed ffmpeg over custom conda binary environments
+        ffmpeg_bin = "/usr/bin/ffmpeg"
+        if not os.path.exists(ffmpeg_bin):
+            ffmpeg_bin = shutil.which("ffmpeg")
+            
+        if not ffmpeg_bin:
             print("[SYSTEM] Warning: ffmpeg executable is not available on host. Transcoding skipped.")
             return
             
-        print(f"[SYSTEM] Transcoding {filename} to lightweight web-preview in background...")
+        print(f"[SYSTEM] Transcoding {filename} to lightweight web-preview in background using {ffmpeg_bin}...")
         try:
             # Run ffmpeg command: 720p 30fps 1M bitrate H.264 web optimization with ultrafast preset
             cmd = [
-                "ffmpeg", "-y", "-i", input_path,
+                ffmpeg_bin, "-y", "-i", input_path,
                 "-vcodec", "libx264", "-preset", "ultrafast",
                 "-s", "1280x720", "-r", "30", "-b:v", "1000k",
                 "-an", output_path
