@@ -12,6 +12,7 @@ export interface VideoAnalyticsStationProps {
   nativeHeight?: number; // Matching your 1440p vertical resolution: 1440
   fps?: number;          // Processing cadence loop configuration: 60
   isProcessing?: boolean; // Disable controls during core engine runs
+  currentFrameIndex?: number; // Real-time lockstep frame sync parameter
 }
 
 export default function VideoAnalyticsStation({
@@ -21,7 +22,8 @@ export default function VideoAnalyticsStation({
   nativeWidth = 2560,
   nativeHeight = 1440,
   fps = 60,
-  isProcessing = false
+  isProcessing = false,
+  currentFrameIndex = 0
 }: VideoAnalyticsStationProps): React.JSX.Element {
   
   // 1. Hardware & Virtual Canvas DOM Reference Points
@@ -220,16 +222,23 @@ export default function VideoAnalyticsStation({
     };
   }, [fps, playbackRate]);
 
-  // Automatically reset video playback to the beginning and start playback when engine starts processing
+  // Automatically reset video playback to the beginning and pause it (waiting for engine step seeks)
   useEffect(() => {
     if (isProcessing && videoRef.current) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.play().catch((err) => {
-        console.warn("[SYSTEM] Autoplay request on engine start was interrupted:", err);
-      });
+      const video = videoRef.current;
+      video.pause();
+      video.currentTime = 0;
       renderTrackingOverlay();
     }
   }, [isProcessing]);
+
+  // Lockstep frame synchronizer: advances the playhead frame-by-frame with backend processing
+  useEffect(() => {
+    if (isProcessing && videoRef.current && currentFrameIndex !== undefined) {
+      videoRef.current.currentTime = currentFrameIndex / fps;
+      renderTrackingOverlay();
+    }
+  }, [currentFrameIndex, isProcessing, fps]);
 
   // Speed and Fullscreen actions
   const handleSpeedChange = (rate: number) => {
@@ -253,7 +262,7 @@ export default function VideoAnalyticsStation({
   };
 
   return (
-    <div className="w-full bg-zinc-900/40 p-4 rounded-xl border border-zinc-800 flex flex-col gap-4">
+    <div className="w-full bg-zinc-900/40 p-4 rounded-xl border border-zinc-880 flex flex-col gap-4">
       
       {/* MONITOR STATION NAVIGATION LAYER HEADER */}
       <div className="flex items-center justify-between border-b border-zinc-800 pb-3">

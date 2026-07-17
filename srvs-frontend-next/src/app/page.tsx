@@ -32,6 +32,7 @@ export default function Home() {
   ]);
   const [ingestedFeeds, setIngestedFeeds] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [currentFrameIndex, setCurrentFrameIndex] = useState<number>(0);
   const [processProgress, setProcessProgress] = useState<number>(0);
   const [activeLogs, setActiveLogs] = useState<LogEntry[]>(INITIAL_LOGS);
   const [totalStreamFrames, setTotalStreamFrames] = useState<number>(30);
@@ -147,6 +148,7 @@ export default function Home() {
           } else if (payload.type === 'metadata') {
             setTotalStreamFrames(payload.data.total_frames || 30);
           } else if (payload.type === 'telemetry') {
+            setCurrentFrameIndex(payload.data.frame);
             setTelemetry(prev => ({
               ...prev,
               [payload.data.frame]: payload.data.tracks
@@ -452,6 +454,7 @@ export default function Home() {
                   nativeHeight={1440}
                   fps={60}
                   isProcessing={isProcessing}
+                  currentFrameIndex={currentFrameIndex}
                 />
               </div>
 

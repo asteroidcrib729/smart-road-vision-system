@@ -156,11 +156,11 @@ def transcode_to_web_preview(filename: str):
             
         print(f"[SYSTEM] Transcoding {filename} to lightweight web-preview in background using {ffmpeg_bin}...")
         try:
-            # Run ffmpeg command: 720p 30fps 1M bitrate H.264 web optimization with ultrafast preset
+            # Run ffmpeg command: 1080p 30fps 4M bitrate H.264 web optimization with ultrafast preset
             cmd = [
                 ffmpeg_bin, "-y", "-i", input_path,
                 "-vcodec", "libx264", "-preset", "ultrafast",
-                "-s", "1280x720", "-r", "30", "-b:v", "1000k",
+                "-s", "1920x1080", "-r", "30", "-b:v", "4000k",
                 "-an", output_path
             ]
             res = subprocess.run(cmd, capture_output=True, text=True)
@@ -293,7 +293,7 @@ async def api_get_ledger(category: str = Query("Motorcycle", pattern="^(Motorcyc
                     "className": "Auto-rickshaw",
                     "timestamp": r['Timestamp'] if r['Timestamp'] else "2026-06-02 16:11:04",
                     "rawImage": f"/static/Auto_Rickshaws/{r['Tracking_ID']}.jpg?t={cache_ts}",
-                    "enhancedImage": f"/static/Auto_Rickshaws/{r['Tracking_ID']}.jpg?t={cache_ts}",
+                    "enhancedImage": f"/static/Restored_Dashboards/Restored_{r['Tracking_ID']}.jpg?t={cache_ts}",
                     "plateNumber": r['Read_Number_Plate'] or "Missing/Obstructed",
                     "ocrMethod": "Local OCR (PaddleOCR v4)",
                     "confidence": 91.2,
@@ -310,7 +310,7 @@ async def api_get_ledger(category: str = Query("Motorcycle", pattern="^(Motorcyc
                     "className": cls_name,
                     "timestamp": r['Timestamp'] if r['Timestamp'] else "2026-06-02 16:12:59",
                     "rawImage": f"/static/Large_Vehicles/{r['Tracking_ID']}.jpg?t={cache_ts}",
-                    "enhancedImage": f"/static/Large_Vehicles/{r['Tracking_ID']}.jpg?t={cache_ts}",
+                    "enhancedImage": f"/static/Restored_Dashboards/Restored_{r['Tracking_ID']}.jpg?t={cache_ts}",
                     "plateNumber": r['Read_Number_Plate'] or "Missing/Obstructed",
                     "ocrMethod": "Local OCR (PaddleOCR v4)",
                     "confidence": 94.5,
