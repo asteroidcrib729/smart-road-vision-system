@@ -416,6 +416,7 @@ async def api_get_csvs():
 async def api_debug_videos():
     """Diagnostic route to inspect S3 connection, local file presence, and transcoding status."""
     import boto3
+    import shutil
     from config import Config
     
     videos_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "videos")
@@ -448,6 +449,7 @@ async def api_debug_videos():
         "s3_bucket": Config.AWS_S3_BUCKET,
         "s3_connected": s3_connected,
         "s3_error": s3_error,
+        "ffmpeg_available": shutil.which("ffmpeg") is not None,
         "local_video_files": local_files,
         "s3_bucket_files": s3_files
     }
