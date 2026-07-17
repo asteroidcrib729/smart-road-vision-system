@@ -51,3 +51,9 @@ class Config:
 
     # --- Camera & System ---
     CAMERA_ID = "CAM_KHI_01"
+
+    # --- AWS S3 and CloudFront Configuration ---
+    AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+    AWS_S3_BUCKET = os.getenv("AWS_S3_BUCKET")
+    AWS_CLOUDFRONT_DOMAIN = os.getenv("AWS_CLOUDFRONT_DOMAIN")

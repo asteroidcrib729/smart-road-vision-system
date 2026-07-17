@@ -3,7 +3,7 @@ import sqlite3
 import csv
 import asyncio
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Query, Header
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -103,37 +103,68 @@ async def run_pipeline_wrapper(video_filename: str):
         pipeline_running = False
         pipeline_task = None
 
+def upload_file_to_s3(local_path: str, s3_key: str):
+    import boto3
+    from config import Config
+    
+    if not all([Config.AWS_ACCESS_KEY_ID, Config.AWS_SECRET_ACCESS_KEY, Config.AWS_S3_BUCKET]):
+        print("[SYSTEM] AWS S3 configuration is incomplete. Skipping S3 upload.")
+        return False
+        
+    try:
+        print(f"[SYSTEM] Uploading {local_path} to S3 bucket {Config.AWS_S3_BUCKET} under key {s3_key}...")
+        s3_client = boto3.client(
+            "s3",
+            aws_access_key_id=Config.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=Config.AWS_SECRET_ACCESS_KEY
+        )
+        s3_client.upload_file(
+            local_path, 
+            Config.AWS_S3_BUCKET, 
+            s3_key,
+            ExtraArgs={"ContentType": "video/mp4"}
+        )
+        print(f"[SYSTEM] Successfully uploaded {s3_key} to S3!")
+        return True
+    except Exception as e:
+        print(f"[SYSTEM] S3 Upload failed: {str(e)}")
+        return False
+
 def transcode_to_web_preview(filename: str):
     import subprocess
     import shutil
     
     videos_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "videos")
     input_path = os.path.join(videos_dir, filename)
-    output_path = os.path.join(videos_dir, f"web_preview_{filename}")
+    preview_name = f"web_preview_{filename}"
+    output_path = os.path.join(videos_dir, preview_name)
     
     if not os.path.exists(input_path):
         print(f"[SYSTEM] Input video path does not exist for transcoding: {input_path}")
         return
+        
+    if not os.path.exists(output_path):
+        if not shutil.which("ffmpeg"):
+            print("[SYSTEM] Warning: ffmpeg executable is not available on host. Transcoding skipped.")
+            return
+            
+        print(f"[SYSTEM] Transcoding {filename} to lightweight web-preview in background...")
+        try:
+            # Run ffmpeg command: 720p 30fps 1M bitrate H.264 web optimization
+            cmd = [
+                "ffmpeg", "-y", "-i", input_path,
+                "-vcodec", "libx264", "-s", "1280x720",
+                "-r", "30", "-b:v", "1000k", "-an", output_path
+            ]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(f"[SYSTEM] Web preview generation completed: {preview_name}")
+        except Exception as e:
+            print(f"[SYSTEM] Failed web preview transcoding: {str(e)}")
+            return
+            
+    # Once transcoding is completed (or if it was already transcoded), upload to S3
     if os.path.exists(output_path):
-        print(f"[SYSTEM] Web preview already exists for {filename}. Skipping.")
-        return
-        
-    if not shutil.which("ffmpeg"):
-        print("[SYSTEM] Warning: ffmpeg executable is not available on host. Transcoding skipped.")
-        return
-        
-    print(f"[SYSTEM] Transcoding {filename} to lightweight web-preview in background...")
-    try:
-        # Run ffmpeg command: 720p 30fps 1M bitrate H.264 web optimization
-        cmd = [
-            "ffmpeg", "-y", "-i", input_path,
-            "-vcodec", "libx264", "-s", "1280x720",
-            "-r", "30", "-b:v", "1000k", "-an", output_path
-        ]
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print(f"[SYSTEM] Web preview generation completed: web_preview_{filename}")
-    except Exception as e:
-        print(f"[SYSTEM] Failed web preview transcoding: {str(e)}")
+        upload_file_to_s3(output_path, preview_name)
 
 def check_and_transcode_existing_videos():
     videos_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "videos")
@@ -381,13 +412,19 @@ async def api_get_csvs():
 
 @app.get("/api/videos/{video_name}")
 async def api_stream_video(video_name: str, range: str = Header(None)):
-    """Serve video streams using standard HTTP bytes Range requests to support seeking and zero-buffering."""
+    """Serve video streams, redirecting to AWS CloudFront CDN if configured, or streaming locally as fallback."""
     videos_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "videos")
-    
-    # Check if a lightweight web-preview version is available, and stream it instead
     preview_name = f"web_preview_{video_name}"
     preview_path = os.path.join(videos_dir, preview_name)
     
+    # If S3 and CloudFront CDN are configured and the local preview file has been created,
+    # redirect directly to the global CloudFront edge location!
+    if all([Config.AWS_CLOUDFRONT_DOMAIN, Config.AWS_ACCESS_KEY_ID, Config.AWS_SECRET_ACCESS_KEY]):
+        if os.path.exists(preview_path):
+            cf_url = f"https://{Config.AWS_CLOUDFRONT_DOMAIN}/{preview_name}"
+            print(f"[SYSTEM] Redirecting streaming request for {video_name} to CloudFront CDN: {cf_url}")
+            return RedirectResponse(url=cf_url)
+            
     if os.path.exists(preview_path):
         video_path = preview_path
     else:
