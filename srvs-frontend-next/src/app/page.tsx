@@ -94,7 +94,10 @@ export default function Home() {
         const combined = [...moto, ...rick, ...large].map(item => ({
           ...item,
           rawImage: item.rawImage.startsWith("http") ? item.rawImage : `${API_URL}${item.rawImage}`,
-          enhancedImage: item.enhancedImage.startsWith("http") ? item.enhancedImage : `${API_URL}${item.enhancedImage}`
+          enhancedImage: item.enhancedImage.startsWith("http") ? item.enhancedImage : `${API_URL}${item.enhancedImage}`,
+          vehicleImage: item.vehicleImage 
+            ? (item.vehicleImage.startsWith("http") ? item.vehicleImage : `${API_URL}${item.vehicleImage}`)
+            : undefined
         }));
         
         setSnapshots(combined);
