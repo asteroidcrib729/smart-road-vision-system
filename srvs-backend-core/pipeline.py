@@ -57,16 +57,6 @@ class PaddleOCREngine:
                     conf = text_info[1]
                     
                     clean_text = re.sub(r'[^A-Za-z0-9]', '', text)
-                    print(f"[OCR DEBUG] Pass 1 (Full): Raw text='{text}', Cleaned='{clean_text}', Conf={conf:.2f}")
-                    try:
-                        event_manager.publish("log", {
-                            "time": datetime.datetime.now().strftime("%H:%M:%S"),
-                            "message": f"🔍 [OCR Debug] Pass 1 (Full) Raw text: '{text}' (conf: {conf:.2f})",
-                            "type": "info"
-                        })
-                    except Exception:
-                        pass
-                        
                     if len(clean_text) >= 3:
                         texts.append(clean_text)
                         if conf > max_conf:
@@ -97,16 +87,6 @@ class PaddleOCREngine:
                         conf = text_info[1]
                         
                         clean_text = re.sub(r'[^A-Za-z0-9]', '', text)
-                        print(f"[OCR DEBUG] Pass 2 (Bumper): Raw text='{text}', Cleaned='{clean_text}', Conf={conf:.2f}")
-                        try:
-                            event_manager.publish("log", {
-                                "time": datetime.datetime.now().strftime("%H:%M:%S"),
-                                "message": f"🔍 [OCR Debug] Pass 2 (Bumper) Raw text: '{text}' (conf: {conf:.2f})",
-                                "type": "info"
-                            })
-                        except Exception:
-                            pass
-                            
                         if len(clean_text) >= 3:
                             texts.append(clean_text)
                             if conf > max_conf:
@@ -654,10 +634,10 @@ class VideoPipelineAsync:
                         "violation": violation
                     })
 
-                # 2. Finalize tracks asynchronously when they are officially lost / exit the frame
+                # 2. Finalize tracks when they are officially lost / exit the frame
                 for track in removed_tracks:
                     track_id = track['track_id']
-                    asyncio.create_task(processor.finalize_track(track_id))
+                    await processor.finalize_track(track_id)
 
                 # Publish telemetry data for current frame
                 if tracks_data:
