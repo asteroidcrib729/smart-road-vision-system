@@ -38,9 +38,12 @@ class PaddleOCREngine:
         if not self.ocr or img is None or img.size == 0:
             return None, 0.0, None
         try:
+            # Convert BGR (OpenCV format) to RGB (PaddleOCR expected format) to resolve channel swap OCR failure
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            
             # Pass 1: Focus on the lower-middle region where license plates are situated
-            h, w = img.shape[:2]
-            bumper_crop = img[int(h * 0.55):int(h * 0.95), int(w * 0.15):int(w * 0.85)]
+            h, w = img_rgb.shape[:2]
+            bumper_crop = img_rgb[int(h * 0.55):int(h * 0.95), int(w * 0.15):int(w * 0.85)]
             
             result = self.ocr.ocr(bumper_crop, cls=False)
             if result and result[0]:
@@ -68,7 +71,7 @@ class PaddleOCREngine:
                     return "".join(texts), max_conf, best_bbox
 
             # Pass 2: Fallback to full crop if bumper crop didn't return text
-            result_full = self.ocr.ocr(img, cls=False)
+            result_full = self.ocr.ocr(img_rgb, cls=False)
             if result_full and result_full[0]:
                 texts = []
                 max_conf = 0.0
