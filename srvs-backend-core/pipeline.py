@@ -41,37 +41,43 @@ class PaddleOCREngine:
             # Convert BGR (OpenCV format) to RGB (PaddleOCR expected format) to resolve channel swap OCR failure
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             
-            # Pass 1: Focus on the lower-middle region where license plates are situated
+            # Pass 1: Focus on the lower-middle region (bumper) where plates are situated
             h, w = img_rgb.shape[:2]
             bumper_crop = img_rgb[int(h * 0.55):int(h * 0.95), int(w * 0.15):int(w * 0.85)]
             
-            result = self.ocr.ocr(bumper_crop, cls=False)
-            if result and result[0]:
-                texts = []
-                max_conf = 0.0
-                best_bbox = None
+            # Resize the bumper crop by 3x to upscale small plates for PaddleOCR text detection
+            if bumper_crop.size > 0:
+                bh, bw = bumper_crop.shape[:2]
+                bumper_resized = cv2.resize(bumper_crop, (bw * 3, bh * 3), interpolation=cv2.INTER_CUBIC)
                 
-                for line in result[0]:
-                    bbox = line[0] # [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
-                    text_info = line[1] # ('TEXT', 0.95)
-                    text = text_info[0].strip()
-                    conf = text_info[1]
+                result = self.ocr.ocr(bumper_resized, cls=False)
+                if result and result[0]:
+                    texts = []
+                    max_conf = 0.0
+                    best_bbox = None
                     
-                    clean_text = re.sub(r'[^A-Za-z0-9]', '', text)
-                    if len(clean_text) >= 3:
-                        texts.append(clean_text)
-                        if conf > max_conf:
-                            max_conf = conf
-                            # Map coordinates back to the original full image coordinates
-                            best_bbox = [
-                                [pt[0] + int(w * 0.15), pt[1] + int(h * 0.55)]
-                                for pt in bbox
-                            ]
-                if texts:
-                    return "".join(texts), max_conf, best_bbox
+                    for line in result[0]:
+                        bbox = line[0] # Bbox coordinates in 3x upscaled bumper space
+                        text_info = line[1]
+                        text = text_info[0].strip()
+                        conf = text_info[1]
+                        
+                        clean_text = re.sub(r'[^A-Za-z0-9]', '', text)
+                        if len(clean_text) >= 3:
+                            texts.append(clean_text)
+                            if conf > max_conf:
+                                max_conf = conf
+                                # Map coordinates back: divide by 3 (for resize) and add bumper offset
+                                best_bbox = [
+                                    [int(pt[0] / 3) + int(w * 0.15), int(pt[1] / 3) + int(h * 0.55)]
+                                    for pt in bbox
+                                ]
+                    if texts:
+                        return "".join(texts), max_conf, best_bbox
 
-            # Pass 2: Fallback to full crop if bumper crop didn't return text
-            result_full = self.ocr.ocr(img_rgb, cls=False)
+            # Pass 2: Fallback to full crop resized by 2x
+            img_resized = cv2.resize(img_rgb, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
+            result_full = self.ocr.ocr(img_resized, cls=False)
             if result_full and result_full[0]:
                 texts = []
                 max_conf = 0.0
@@ -88,7 +94,10 @@ class PaddleOCREngine:
                         texts.append(clean_text)
                         if conf > max_conf:
                             max_conf = conf
-                            best_bbox = bbox
+                            best_bbox = [
+                                [int(pt[0] / 2), int(pt[1] / 2)]
+                                for pt in bbox
+                            ]
                 if texts:
                     return "".join(texts), max_conf, best_bbox
         except Exception as e:
@@ -330,9 +339,12 @@ class StreamA_Processor(BaseStreamProcessor):
         # Save the raw Unrestored Plate crop
         plate_raw_path = os.path.join(Config.OUTPUT_RESTORED, f"Plate_{clean_id}.jpg")
         cv2.imwrite(plate_raw_path, plate_crop)
+        
+        # Save raw plate crop to restored_path as immediate fallback (prevents broken images if HF API fails)
+        restored_path = os.path.join(Config.OUTPUT_RESTORED, f"Restored_{clean_id}.jpg")
+        cv2.imwrite(restored_path, plate_crop)
 
         # Dispatch the plate crop to Real-ESRGAN API for enhancement
-        restored_path = os.path.join(Config.OUTPUT_RESTORED, f"Restored_{clean_id}.jpg")
         asyncio.create_task(self.enhancement_api.enhance_image(plate_crop, restored_path))
 
         # Save to DB with Speed, Timestamp, and actual detected Class_Name
@@ -420,9 +432,12 @@ class StreamB_Processor(BaseStreamProcessor):
             # Save the raw Unrestored Plate crop
             plate_raw_path = os.path.join(Config.OUTPUT_RESTORED, f"Plate_{clean_id}.jpg")
             cv2.imwrite(plate_raw_path, plate_crop)
+            
+            # Save raw plate crop to restored_path as immediate fallback
+            restored_path = os.path.join(Config.OUTPUT_RESTORED, f"Restored_{clean_id}.jpg")
+            cv2.imwrite(restored_path, plate_crop)
 
             # Dispatch to Real-ESRGAN API for enhancement
-            restored_path = os.path.join(Config.OUTPUT_RESTORED, f"Restored_{clean_id}.jpg")
             asyncio.create_task(self.enhancement_api.enhance_image(plate_crop, restored_path))
 
             await self.db.log_motorcycle(clean_id, plate_text, helmet_detected, violation, speed, now_str)
@@ -457,9 +472,12 @@ class StreamB_Processor(BaseStreamProcessor):
             # Save the raw Unrestored Plate crop
             plate_raw_path = os.path.join(Config.OUTPUT_RESTORED, f"Plate_{clean_id}.jpg")
             cv2.imwrite(plate_raw_path, plate_crop)
+            
+            # Save raw plate crop to restored_path as immediate fallback
+            restored_path = os.path.join(Config.OUTPUT_RESTORED, f"Restored_{clean_id}.jpg")
+            cv2.imwrite(restored_path, plate_crop)
 
             # Dispatch to Real-ESRGAN API for enhancement
-            restored_path = os.path.join(Config.OUTPUT_RESTORED, f"Restored_{clean_id}.jpg")
             asyncio.create_task(self.enhancement_api.enhance_image(plate_crop, restored_path))
 
             await self.db.log_auto_rickshaw(clean_id, plate_text, violation, speed, now_str)
