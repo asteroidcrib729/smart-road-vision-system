@@ -317,6 +317,12 @@ class StreamA_Processor(BaseStreamProcessor):
                 plate_text = None
                 plate_bbox = None
 
+        # Gemini Cloud API OCR Fallback if local OCR fails
+        if not plate_text:
+            async with api_cooldown_lock:
+                plate_text = await self.plate_api.extract_plate(crop)
+                await asyncio.sleep(4.2)
+
         if not plate_text:
             plate_text = "Missing/Obstructed"
             # Set violation flag for missing plates or speed infractions
@@ -451,7 +457,12 @@ class StreamB_Processor(BaseStreamProcessor):
             print(f"[Stream B] Processed {track_id} (Motorcycle): Plate={plate_text}, Helmet={helmet_detected}, Violation={violation}")
 
         elif class_name == "Auto-rickshaw":
-            # Auto-rickshaws utilize local OCR only and do not use API OCR
+            # Gemini Cloud API OCR Fallback if local OCR fails
+            if not plate_text:
+                async with api_cooldown_lock:
+                    plate_text = await self.plate_api.extract_plate(crop)
+                    await asyncio.sleep(4.2)
+
             if not plate_text:
                 plate_text = "Missing/Obstructed"
 
