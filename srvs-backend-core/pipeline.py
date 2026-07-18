@@ -40,51 +40,18 @@ class PaddleOCREngine:
         try:
             # Convert BGR (OpenCV format) to RGB (PaddleOCR expected format) to resolve channel swap OCR failure
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            
-            # Pass 1: Focus on the lower-middle region (bumper) where plates are situated
             h, w = img_rgb.shape[:2]
-            bumper_crop = img_rgb[int(h * 0.55):int(h * 0.95), int(w * 0.15):int(w * 0.85)]
             
-            # Resize the bumper crop by 3x to upscale small plates for PaddleOCR text detection
-            if bumper_crop.size > 0:
-                bh, bw = bumper_crop.shape[:2]
-                bumper_resized = cv2.resize(bumper_crop, (bw * 3, bh * 3), interpolation=cv2.INTER_CUBIC)
-                
-                result = self.ocr.ocr(bumper_resized, cls=False)
-                if result and result[0]:
-                    texts = []
-                    max_conf = 0.0
-                    best_bbox = None
-                    
-                    for line in result[0]:
-                        bbox = line[0] # Bbox coordinates in 3x upscaled bumper space
-                        text_info = line[1]
-                        text = text_info[0].strip()
-                        conf = text_info[1]
-                        
-                        clean_text = re.sub(r'[^A-Za-z0-9]', '', text)
-                        if len(clean_text) >= 3:
-                            texts.append(clean_text)
-                            if conf > max_conf:
-                                max_conf = conf
-                                # Map coordinates back: divide by 3 (for resize) and add bumper offset
-                                best_bbox = [
-                                    [int(pt[0] / 3) + int(w * 0.15), int(pt[1] / 3) + int(h * 0.55)]
-                                    for pt in bbox
-                                ]
-                    if texts:
-                        return "".join(texts), max_conf, best_bbox
-
-            # Pass 2: Fallback to full crop resized by 2x
-            img_resized = cv2.resize(img_rgb, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
-            result_full = self.ocr.ocr(img_resized, cls=False)
-            if result_full and result_full[0]:
+            # Pass 1: Run OCR on the Entire Vehicle Crop upscaled by 2.5x to preserve context and avoid clipping the plate
+            img_resized = cv2.resize(img_rgb, (int(w * 2.5), int(h * 2.5)), interpolation=cv2.INTER_CUBIC)
+            result = self.ocr.ocr(img_resized, cls=False)
+            if result and result[0]:
                 texts = []
                 max_conf = 0.0
                 best_bbox = None
                 
-                for line in result_full[0]:
-                    bbox = line[0]
+                for line in result[0]:
+                    bbox = line[0] # Bbox in 2.5x space
                     text_info = line[1]
                     text = text_info[0].strip()
                     conf = text_info[1]
@@ -95,13 +62,52 @@ class PaddleOCREngine:
                         if conf > max_conf:
                             max_conf = conf
                             best_bbox = [
-                                [int(pt[0] / 2), int(pt[1] / 2)]
+                                [int(pt[0] / 2.5), int(pt[1] / 2.5)]
                                 for pt in bbox
                             ]
                 if texts:
                     return "".join(texts), max_conf, best_bbox
+
+            # Pass 2: Bumper Crop fallback upscaled by 3.5x
+            bumper_crop = img_rgb[int(h * 0.50):int(h * 0.95), int(w * 0.15):int(w * 0.85)]
+            if bumper_crop.size > 0:
+                bh, bw = bumper_crop.shape[:2]
+                bumper_resized = cv2.resize(bumper_crop, (int(bw * 3.5), int(bh * 3.5)), interpolation=cv2.INTER_CUBIC)
+                
+                result_bumper = self.ocr.ocr(bumper_resized, cls=False)
+                if result_bumper and result_bumper[0]:
+                    texts = []
+                    max_conf = 0.0
+                    best_bbox = None
+                    
+                    for line in result_bumper[0]:
+                        bbox = line[0] # Bbox in 3.5x space
+                        text_info = line[1]
+                        text = text_info[0].strip()
+                        conf = text_info[1]
+                        
+                        clean_text = re.sub(r'[^A-Za-z0-9]', '', text)
+                        if len(clean_text) >= 3:
+                            texts.append(clean_text)
+                            if conf > max_conf:
+                                max_conf = conf
+                                best_bbox = [
+                                    [int(pt[0] / 3.5) + int(w * 0.15), int(pt[1] / 3.5) + int(h * 0.50)]
+                                    for pt in bbox
+                                ]
+                    if texts:
+                        return "".join(texts), max_conf, best_bbox
         except Exception as e:
-            print(f"[SYSTEM] Local OCR inference failed: {e}")
+            err_msg = f"❌ [Local OCR Inference Error]: {e}"
+            print(err_msg)
+            try:
+                event_manager.publish("log", {
+                    "time": datetime.datetime.now().strftime("%H:%M:%S"),
+                    "message": err_msg,
+                    "type": "warning"
+                })
+            except Exception:
+                pass
         return None, 0.0, None
 
 
@@ -317,12 +323,6 @@ class StreamA_Processor(BaseStreamProcessor):
                 plate_text = None
                 plate_bbox = None
 
-        # Gemini Cloud API OCR Fallback if local OCR fails
-        if not plate_text:
-            async with api_cooldown_lock:
-                plate_text = await self.plate_api.extract_plate(crop)
-                await asyncio.sleep(4.2)
-
         if not plate_text:
             plate_text = "Missing/Obstructed"
             # Set violation flag for missing plates or speed infractions
@@ -457,12 +457,6 @@ class StreamB_Processor(BaseStreamProcessor):
             print(f"[Stream B] Processed {track_id} (Motorcycle): Plate={plate_text}, Helmet={helmet_detected}, Violation={violation}")
 
         elif class_name == "Auto-rickshaw":
-            # Gemini Cloud API OCR Fallback if local OCR fails
-            if not plate_text:
-                async with api_cooldown_lock:
-                    plate_text = await self.plate_api.extract_plate(crop)
-                    await asyncio.sleep(4.2)
-
             if not plate_text:
                 plate_text = "Missing/Obstructed"
 
@@ -533,7 +527,20 @@ class VideoPipelineAsync:
         cap = None
         if video_path and os.path.exists(video_path):
             cap = cv2.VideoCapture(video_path)
-            print(f"[SYSTEM] Pipeline opened real video: {video_path}")
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            time_only = datetime.datetime.now().strftime("%H:%M:%S")
+            log_msg = f"🎥 [Pipeline] Opened source video: {self.video_filename} (Resolution: {w}x{h}, FPS: {fps:.2f})"
+            print(log_msg)
+            try:
+                event_manager.publish("log", {
+                    "time": time_only,
+                    "message": log_msg,
+                    "type": "info"
+                })
+            except Exception:
+                pass
         else:
             print("[SYSTEM] Video file not found. Falling back to dummy frames.")
 
